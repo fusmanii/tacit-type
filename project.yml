@@ -1,0 +1,83 @@
+# XcodeGen spec. Run `make generate` after editing, then open TacitType.xcworkspace.
+name: TacitType
+
+options:
+  bundleIdPrefix: com.tacit
+  deploymentTarget:
+    iOS: "18.0"
+    macOS: "15.0"
+  createIntermediateGroups: true
+
+configFiles:
+  Debug: Config/Signing.xcconfig
+  Release: Config/Signing.xcconfig
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    DEAD_CODE_STRIPPING: YES
+
+packages:
+  TacitKit:
+    path: Packages/TacitKit
+
+targets:
+  TacitType-macOS:
+    type: application
+    platform: macOS
+    sources:
+      - Apps/TacitType-macOS
+    dependencies:
+      - package: TacitKit
+    info:
+      path: Apps/TacitType-macOS/Info.plist
+      properties:
+        CFBundleDisplayName: Tacit Type
+        CFBundleName: Tacit Type
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSUIElement: true
+        LSApplicationCategoryType: public.app-category.productivity
+        NSLocalNetworkUsageDescription: Tacit Type connects to your iPhone to receive face and audio data.
+        NSBonjourServices: [_tacittype._tcp]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tacittype.mac
+        PRODUCT_NAME: TacitType
+        # Apple silicon only. Developer ID + hardened runtime, no App Sandbox (needs Accessibility and CGEvent).
+        ARCHS: arm64
+        ENABLE_HARDENED_RUNTIME: YES
+        ENABLE_APP_SANDBOX: NO
+        COMBINE_HIDPI_IMAGES: YES
+
+  TacitType-iOS:
+    type: application
+    platform: iOS
+    sources:
+      - Apps/TacitType-iOS
+    dependencies:
+      - package: TacitKit
+    info:
+      path: Apps/TacitType-iOS/Info.plist
+      properties:
+        CFBundleDisplayName: Tacit Type
+        CFBundleName: Tacit Type
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UIRequiresFullScreen: true
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIRequiredDeviceCapabilities: [arm64, front-facing-camera]
+        NSCameraUsageDescription: Tacit Type reads your face with the TrueDepth camera only while your Mac is capturing.
+        NSMicrophoneUsageDescription: Tacit Type streams your voice to your Mac only while it is capturing.
+        NSLocalNetworkUsageDescription: Tacit Type talks directly to your Mac.
+        NSBonjourServices: [_tacittype._tcp]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tacittype.ios
+        PRODUCT_NAME: TacitType
+        TARGETED_DEVICE_FAMILY: "1"

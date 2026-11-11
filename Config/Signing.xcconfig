@@ -1,0 +1,3 @@
+// Signing for both apps. Your team lives in Signing.local.xcconfig, which git ignores.
+// Copy Signing.local.xcconfig.example to create it.
+#include? "Signing.local.xcconfig"

@@ -1,0 +1,2 @@
+// Your Apple developer team ID. Find it in Keychain Access on your "Apple Development" certificate (Organizational Unit).
+DEVELOPMENT_TEAM = XXXXXXXXXX
