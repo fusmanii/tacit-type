@@ -23,6 +23,9 @@ public enum Message: Sendable, Equatable {
     case status(DeviceStatus)
     case clockPing(ClockSync)
     case clockPong(ClockSync)
+    case pairRequest(PairRequest)
+    case pairAccept(PairAccept)
+    case forget(Forget)
     case faceBatch(FaceBatch)
     case audioChunk(AudioChunk)
     case error(ProtocolErrorMessage)
@@ -35,6 +38,9 @@ public enum Message: Sendable, Equatable {
         case .status: .status
         case .clockPing: .clockPing
         case .clockPong: .clockPong
+        case .pairRequest: .pairRequest
+        case .pairAccept: .pairAccept
+        case .forget: .forget
         case .faceBatch: .faceBatch
         case .audioChunk: .audioChunk
         case .error: .error
@@ -51,6 +57,9 @@ public enum Message: Sendable, Equatable {
         case let .status(payload): try Self.json(payload)
         case let .clockPing(payload): try Self.json(payload)
         case let .clockPong(payload): try Self.json(payload)
+        case let .pairRequest(payload): try Self.json(payload)
+        case let .pairAccept(payload): try Self.json(payload)
+        case let .forget(payload): try Self.json(payload)
         case let .error(payload): try Self.json(payload)
         case let .faceBatch(batch): try batch.encoded()
         case let .audioChunk(chunk): chunk.encoded()
@@ -65,6 +74,9 @@ public enum Message: Sendable, Equatable {
         case .status: self = .status(try Self.json(payload))
         case .clockPing: self = .clockPing(try Self.json(payload))
         case .clockPong: self = .clockPong(try Self.json(payload))
+        case .pairRequest: self = .pairRequest(try Self.json(payload))
+        case .pairAccept: self = .pairAccept(try Self.json(payload))
+        case .forget: self = .forget(try Self.json(payload))
         case .error: self = .error(try Self.json(payload))
         case .faceBatch: self = .faceBatch(try FaceBatch(decoding: payload))
         case .audioChunk: self = .audioChunk(try AudioChunk(decoding: payload))

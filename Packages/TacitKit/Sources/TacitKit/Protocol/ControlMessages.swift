@@ -11,14 +11,17 @@ public enum StreamKind: String, Codable, Sendable, CaseIterable {
 }
 
 public struct Hello: Codable, Sendable, Equatable {
+    /// Stable id of the sender (Keychain on both sides). Must match the id the peer paired with.
+    public var deviceId: UUID
     public var deviceName: String
     public var deviceModel: String
     public var appVersion: String
     public var protocolVersion: UInt8
     public var capabilities: [String]
 
-    public init(deviceName: String, deviceModel: String, appVersion: String,
+    public init(deviceId: UUID, deviceName: String, deviceModel: String, appVersion: String,
                 protocolVersion: UInt8 = Constants.protocolVersion, capabilities: [String] = []) {
+        self.deviceId = deviceId
         self.deviceName = deviceName
         self.deviceModel = deviceModel
         self.appVersion = appVersion
@@ -105,4 +108,31 @@ public struct ProtocolErrorMessage: Codable, Sendable, Equatable {
         self.code = code
         self.message = message
     }
+}
+
+// MARK: Pairing
+
+/// Mac → iPhone, only on the pairing listener, right after `hello`.
+/// Carries the Mac's ephemeral X25519 public key. The long-term key comes from this exchange,
+/// so someone who sniffs the pairing handshake and brute-forces the 6-digit code still can't recover it.
+public struct PairRequest: Codable, Sendable, Equatable {
+    public var publicKey: Data
+
+    public init(publicKey: Data) {
+        self.publicKey = publicKey
+    }
+}
+
+/// iPhone → Mac, reply to `pairRequest`. The iPhone has stored the long-term key when it sends this.
+public struct PairAccept: Codable, Sendable, Equatable {
+    public var publicKey: Data
+
+    public init(publicKey: Data) {
+        self.publicKey = publicKey
+    }
+}
+
+/// Both directions. The sender has deleted its key for the receiver. The receiver deletes its key too.
+public struct Forget: Codable, Sendable, Equatable {
+    public init() {}
 }

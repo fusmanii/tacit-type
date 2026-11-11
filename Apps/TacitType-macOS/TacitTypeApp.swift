@@ -11,6 +11,12 @@ struct TacitTypeApp: App {
                 .environment(devices)
         }
 
+        Window("Pair iPhone", id: WindowID.pairing) {
+            PairingView()
+                .environment(devices)
+        }
+        .windowResizability(.contentSize)
+
         Window("Recorder", id: WindowID.recorder) {
             PlaceholderView(title: "Recorder", milestone: "M3")
         }
@@ -29,4 +35,5 @@ struct TacitTypeApp: App {
 enum WindowID {
     static let recorder = "recorder"
     static let commands = "commands"
+    static let pairing = "pairing"
 }
