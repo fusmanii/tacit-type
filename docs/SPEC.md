@@ -48,7 +48,7 @@ tacittype/
 
 ### Framing
 
-One TCP stream (over TLS) carries all messages. A custom `NWProtocolFramer` adds an 8-byte header to each message:
+One TCP stream (over TLS-PSK, see Pairing) carries all messages. A custom `NWProtocolFramer` adds an 8-byte header to each message:
 
 | Bytes | Field | Notes |
 | --- | --- | --- |
@@ -63,11 +63,14 @@ Control messages carry JSON payloads (`Codable`). Data messages carry packed lit
 
 | Type | Name | Direction | Payload |
 | --- | --- | --- | --- |
-| 0x01 | `hello` | both | JSON: deviceName, deviceModel, appVersion, protocolVersion, capabilities |
+| 0x01 | `hello` | both | JSON: deviceId, deviceName, deviceModel, appVersion, protocolVersion, capabilities |
 | 0x02 | `start` | Mac → iPhone | JSON: sessionId (UUID), mode (`record` / `dictate` / `command`), streams (`face`, `audio`), promptText? |
 | 0x03 | `stop` | Mac → iPhone | JSON: sessionId |
 | 0x04 | `status` | iPhone → Mac | JSON: state, trackingState, faceDetected, thermalState, batteryLevel, isCharging |
 | 0x05 | `clockPing` / 0x06 `clockPong` | both | JSON: t0, t1, t2 (seconds) for offset estimation |
+| 0x07 | `pairRequest` | Mac → iPhone | JSON: publicKey (X25519, base64). Pairing listener only |
+| 0x08 | `pairAccept` | iPhone → Mac | JSON: publicKey (X25519, base64) |
+| 0x09 | `forget` | both | JSON: {}. Sender has deleted its key; receiver deletes its key too |
 | 0x10 | `faceBatch` | iPhone → Mac | Binary: N face frames, layout below |
 | 0x11 | `audioChunk` | iPhone → Mac | Binary: Float64 ptsOfFirstSample + Int16 PCM, 16 kHz mono |
 | 0x7F | `error` | both | JSON: code, message |
@@ -91,21 +94,25 @@ The Mac and iPhone find each other with Bonjour and talk over a direct, encrypte
 **Discovery**
 
 - iPhone advertises with `NWListener` on service type `_tacittype._tcp`, TXT record: `id` (stable device UUID in Keychain), `name`, `v` (protocol version).
+- It runs two listeners. The main one holds one PSK per paired Mac and is rebuilt when that set changes. The pairing one (instance name suffixed "(Pairing)", TXT `pair=1`) exists only while a code is on screen and accepts nothing but `hello` + `pairRequest`, so a code can never open a normal session.
 - Mac browses with `NWBrowser` for the same type. Both set `parameters.includePeerToPeer = true` so AWDL is used when there is no common network.
 - Add `NSLocalNetworkUsageDescription` and `NSBonjourServices = [_tacittype._tcp]` to both Info.plists.
 
 **First-time pairing**
 
-1. User picks the iPhone in the Mac menu ("Pair new iPhone…").
-2. iPhone shows a 6-digit code; user types it on the Mac.
-3. Both sides derive a 32-byte pre-shared key: `HKDF-SHA256(code, salt = iphoneId || macId, info = "tacittype-pair-v1")`, then open a TLS 1.3 PSK connection with that key to confirm.
-4. Over that connection the iPhone sends a fresh random 32-byte long-term key. Both store it in Keychain keyed by the peer's id. The 6-digit code is never used again.
+1. The iPhone shows a 6-digit code whenever it has no paired Mac, or after "Pair Another Mac" (touch and hold the dock screen).
+2. User picks the iPhone in the Mac's "Pair New iPhone…" window and types the code.
+3. Both sides derive a 32-byte pre-shared key: `HKDF-SHA256(code, salt = iphoneId, info = "tacittype-pair-v1")`, then open a TLS-PSK connection with identity `tt1-pair`. The Mac's id is not in the salt because the iPhone has to configure the key before any Mac connects.
+4. Inside that connection the Mac sends `hello` + `pairRequest` with an ephemeral X25519 key, and the iPhone answers `pairAccept` with its own. Both derive the long-term key as `HKDF-SHA256(X25519 shared secret, salt = iphoneId || macId, info = "tacittype-ltk-v1")` and store it in Keychain keyed by the peer's id. The code is never used again. Because the key comes from X25519, someone who records the pairing handshake and brute-forces the code offline still can't recover it.
+5. 10 failed handshakes on one code make the iPhone show a fresh one. A single wrong code can cost several, since Network.framework tries AWDL, IPv6 and IPv4 at once.
 
-**Every later connection:** TLS 1.3 with PSK = long-term key (`sec_protocol_options_add_pre_shared_key`). Unknown peers are rejected. "Forget device" deletes the key on both sides.
+**Every later connection:** TLS-PSK with PSK = long-term key and identity `tt1:<macId>`, client session resumption off. Unknown peers are rejected. "Forget device" deletes the key on both sides and sends `forget` if connected.
+
+**TLS version (measured, Nov 2026):** Network.framework only negotiates PSK with TLS 1.2 `TLS_PSK_WITH_AES_128_GCM_SHA256`. TLS 1.3 PSK handshakes fail, and the ECDHE-PSK suites are silently replaced by the plain PSK suite. Forward secrecy for pairing comes from step 4. Over a Bonjour endpoint a refused key leaves the connection in `preparing` instead of failing, so the Mac treats a handshake timeout as "wrong code" while pairing and three timeouts in a row as "rejected" when reconnecting.
 
 **Reconnect:** Mac auto-connects to the last paired iPhone whenever it appears in the browser. On drop, retry with backoff 0.5 s → 1 → 2 → 5 s (cap). `NWConnection.pathUpdateHandler` drives UI state.
 
-**Clock sync:** on connect and every 10 s, run 5 `clockPing`/`clockPong` rounds; keep the round with the lowest RTT; offset = ((t1 − t0) + (t1 − t2)) / 2. Used only for latency metrics and logs. Face and audio already share the iPhone clock, so alignment between them never depends on this.
+**Clock sync:** on connect and every 10 s, run 5 `clockPing`/`clockPong` rounds; keep the round with the lowest RTT; offset = ((t1 − t0) + (t2 − t3)) / 2, where t3 is the Mac's receive time. Used only for latency metrics and logs. Face and audio already share the iPhone clock, so alignment between them never depends on this.
 
 **Bandwidth budget:** face ≈ 63 KB/s + audio 32 KB/s ≈ 0.8 Mbit/s. No compression needed.
 

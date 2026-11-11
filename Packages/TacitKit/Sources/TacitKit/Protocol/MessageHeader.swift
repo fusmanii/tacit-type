@@ -7,6 +7,9 @@ public enum MessageType: UInt8, Sendable, CaseIterable {
     case status = 0x04
     case clockPing = 0x05
     case clockPong = 0x06
+    case pairRequest = 0x07
+    case pairAccept = 0x08
+    case forget = 0x09
     case faceBatch = 0x10
     case audioChunk = 0x11
     case error = 0x7F

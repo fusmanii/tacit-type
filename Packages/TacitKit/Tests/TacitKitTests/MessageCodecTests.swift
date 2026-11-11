@@ -16,7 +16,7 @@ private func sampleFrame(_ i: Int) -> FaceFrame {
 private let sessionId = UUID(uuidString: "0B8D6C4E-7E35-4B7D-9B1F-3C2E3F6A9D10")!
 
 private let everyMessage: [Message] = [
-    .hello(Hello(deviceName: "Faisal's iPhone", deviceModel: "iPhone16,1", appVersion: "0.1.0",
+    .hello(Hello(deviceId: UUID(uuidString: "5D7A3B90-1C2E-4F6A-8B9D-0E1F2A3B4C5D")!, deviceName: "Faisal's iPhone", deviceModel: "iPhone16,1", appVersion: "0.1.0",
                  capabilities: ["face", "audio"])),
     .start(StartCapture(sessionId: sessionId, mode: .record, promptText: "The birch canoe slid on the smooth planks.")),
     .start(StartCapture(sessionId: sessionId, mode: .command, streams: [.face, .audio])),
@@ -25,6 +25,9 @@ private let everyMessage: [Message] = [
                          thermalState: .fair, batteryLevel: 0.82, isCharging: true)),
     .clockPing(ClockSync(t0: 1_000.125)),
     .clockPong(ClockSync(t0: 1_000.125, t1: 1_000.130, t2: 1_000.131)),
+    .pairRequest(PairRequest(publicKey: Data((0 ..< 32).map { UInt8($0) }))),
+    .pairAccept(PairAccept(publicKey: Data((0 ..< 32).map { UInt8(255 - $0) }))),
+    .forget(Forget()),
     .faceBatch(FaceBatch(frames: (0 ..< 6).map(sampleFrame))),
     .faceBatch(FaceBatch(frames: [])),
     .faceBatch(FaceBatch(frames: [.untracked(at: 42)])),
