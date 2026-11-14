@@ -320,7 +320,8 @@ final class LinkServer {
     private var hello: Hello {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
         return Hello(deviceId: deviceId, deviceName: displayName, deviceModel: Self.modelIdentifier,
-                     appVersion: version, capabilities: ["face", "audio"])
+                     appVersion: version, osVersion: UIDevice.current.systemVersion,
+                     capabilities: ["face", "audio"])
     }
 
     private var status: DeviceStatus {

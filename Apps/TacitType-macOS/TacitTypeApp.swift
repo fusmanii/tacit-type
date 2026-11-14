@@ -6,6 +6,7 @@ struct TacitTypeApp: App {
     @State private var devices: DeviceManager
     @State private var sessions: SessionManager
     @State private var bench: CaptureBench
+    @State private var recorder: RecorderModel
 
     init() {
         let devices = DeviceManager()
@@ -13,6 +14,7 @@ struct TacitTypeApp: App {
         _devices = State(initialValue: devices)
         _sessions = State(initialValue: sessions)
         _bench = State(initialValue: CaptureBench(sessions: sessions))
+        _recorder = State(initialValue: RecorderModel(devices: devices, sessions: sessions))
     }
 
     var body: some Scene {
@@ -28,7 +30,9 @@ struct TacitTypeApp: App {
         .windowResizability(.contentSize)
 
         Window("Recorder", id: WindowID.recorder) {
-            PlaceholderView(title: "Recorder", milestone: "M3")
+            RecorderView()
+                .environment(devices)
+                .environment(recorder)
         }
 
         Window("Commands", id: WindowID.commands) {
@@ -40,6 +44,7 @@ struct TacitTypeApp: App {
                 .environment(devices)
                 .environment(sessions)
                 .environment(bench)
+                .environment(recorder)
         }
     }
 }

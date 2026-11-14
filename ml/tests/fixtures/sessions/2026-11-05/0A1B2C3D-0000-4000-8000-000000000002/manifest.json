@@ -1,0 +1,28 @@
+{
+  "appVersions" : {
+    "iphone" : "0.1.0",
+    "mac" : "0.1.0"
+  },
+  "audioGapsFilled" : 0,
+  "createdAt" : "2026-11-05T00:01:00Z",
+  "device" : {
+    "model" : "iPhone16,1",
+    "osVersion" : "18.2"
+  },
+  "droppedFrames" : 0,
+  "featureSchemaVersion" : 1,
+  "frameCount" : 3,
+  "measuredFps" : 60,
+  "mode" : "command",
+  "protocolVersion" : 1,
+  "quality" : {
+    "flags" : [
+      "audible_in_silent",
+      "too_short"
+    ],
+    "ok" : false
+  },
+  "sessionId" : "0A1B2C3D-0000-4000-8000-000000000002",
+  "speechStyle" : "silent",
+  "trackedRatio" : 1
+}

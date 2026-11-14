@@ -1,0 +1,34 @@
+{
+  "appVersions" : {
+    "iphone" : "0.1.0",
+    "mac" : "0.1.0"
+  },
+  "audioGapsFilled" : 1,
+  "commandId" : "send",
+  "createdAt" : "2026-11-05T00:00:00Z",
+  "device" : {
+    "model" : "iPhone16,1",
+    "osVersion" : "18.2"
+  },
+  "droppedFrames" : 0,
+  "featureSchemaVersion" : 1,
+  "firstAudioTs" : 81234.498,
+  "firstFaceTs" : 81234.512,
+  "frameCount" : 12,
+  "measuredAvOffsetMs" : -4.5,
+  "measuredFps" : 60,
+  "mode" : "record",
+  "promptId" : "harvard-03-07",
+  "promptText" : "The birch canoe slid on the smooth planks.",
+  "protocolVersion" : 1,
+  "quality" : {
+    "flags" : [
+
+    ],
+    "ok" : true
+  },
+  "sessionId" : "0A1B2C3D-0000-4000-8000-000000000001",
+  "sittingId" : "0A1B2C3D-0000-4000-8000-0000000000AA",
+  "speechStyle" : "aloud",
+  "trackedRatio" : 0.9166666666666666
+}
