@@ -99,6 +99,10 @@ public struct ClockSync: Codable, Sendable, Equatable {
 public struct ProtocolErrorMessage: Codable, Sendable, Equatable {
     public enum Code: String, Codable, Sendable {
         case versionMismatch, unknownMessageType, malformedPayload, notPaired, unsupported, internalError
+        /// `start` while the camera is in use by another Mac or the lip vertex picker.
+        case busy
+        /// The iPhone couldn't start or keep capturing (permission, ARKit failure, wrong mesh topology).
+        case captureFailed
     }
 
     public var code: Code

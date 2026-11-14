@@ -6,18 +6,51 @@ struct RootView: View {
     @State private var showingConnections = false
 
     var body: some View {
-        switch model.state {
+        content
+            .onChange(of: link.pairedMacs.isEmpty) { _, unpaired in
+                if !unpaired { Task { await model.refreshPermissions() } }
+            }
+    }
+
+    @ViewBuilder private var content: some View {
+        switch model.deviceState {
         case .unpaired:
             PairingCodeView(code: link.pairingCode)
         case .idle, .capturing:
-            DockView(isCapturing: model.state == .capturing, isConnected: !link.connectedMacIds.isEmpty)
+            DockView(isCapturing: model.isCapturing, isConnected: !link.connectedMacIds.isEmpty,
+                     isCharging: model.isCharging)
+                .onAppear { model.setDockScreenVisible(true) }
+                .onDisappear { model.setDockScreenVisible(false) }
                 .onLongPressGesture(minimumDuration: 0.8) { showingConnections = true }
                 .sheet(isPresented: $showingConnections, onDismiss: link.closePairing) {
                     ConnectionsView()
                 }
         case .error:
-            ContentUnavailableView("Tacit Type can't run", systemImage: "exclamationmark.triangle",
-                                   description: Text(model.errorMessage))
+            ProblemView(problem: model.problem)
+        }
+    }
+}
+
+struct ProblemView: View {
+    @Environment(CamModel.self) private var model
+    @Environment(\.openURL) private var openURL
+    let problem: CamModel.Problem?
+
+    var body: some View {
+        ContentUnavailableView {
+            Label("Tacit Type can't capture", systemImage: "exclamationmark.triangle")
+        } description: {
+            Text(problem?.message ?? "")
+        } actions: {
+            if problem?.needsSettings == true {
+                Button("Open Settings") {
+                    if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                }
+                .buttonStyle(.borderedProminent)
+            } else if problem?.canRetry == true {
+                Button("Try Again", action: model.retry)
+                    .buttonStyle(.borderedProminent)
+            }
         }
     }
 }
@@ -55,18 +88,30 @@ struct CodeText: View {
 }
 
 /// Black dock screen with a small status dot. Green while capturing, grey while connected, dim when waiting.
-/// Long-press anywhere for paired Macs.
+/// On battery a line at the bottom asks for the charger. Long-press anywhere for paired Macs.
 struct DockView: View {
     let isCapturing: Bool
     var isConnected = true
+    var isCharging = true
 
     var body: some View {
-        ZStack(alignment: .top) {
+        ZStack {
             Color.black.ignoresSafeArea()
-            Circle()
-                .fill(isCapturing ? Color.green : Color.gray.opacity(isConnected ? 0.6 : 0.2))
-                .frame(width: 8, height: 8)
-                .padding(.top, 12)
+            VStack {
+                Circle()
+                    .fill(isCapturing ? Color.green : Color.gray.opacity(isConnected ? 0.6 : 0.2))
+                    .frame(width: 8, height: 8)
+                    .padding(.top, 12)
+                Spacer()
+                if !isCharging {
+                    Label("Put your iPhone on its charger so it stays awake.", systemImage: "battery.25percent")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                        .padding(.bottom, 24)
+                }
+            }
         }
         .contentShape(Rectangle())
         .accessibilityElement()
@@ -111,6 +156,12 @@ struct ConnectionsView: View {
                         Button("Pair Another Mac") { link.openPairing() }
                     }
                 }
+
+                #if DEBUG
+                Section("Developer") {
+                    NavigationLink("Lip Vertex Picker") { LipVertexPickerView() }
+                }
+                #endif
             }
             .navigationTitle("Macs")
             .navigationBarTitleDisplayMode(.inline)

@@ -3,7 +3,17 @@ import SwiftUI
 
 @main
 struct TacitTypeApp: App {
-    @State private var devices = DeviceManager()
+    @State private var devices: DeviceManager
+    @State private var sessions: SessionManager
+    @State private var bench: CaptureBench
+
+    init() {
+        let devices = DeviceManager()
+        let sessions = SessionManager(devices: devices)
+        _devices = State(initialValue: devices)
+        _sessions = State(initialValue: sessions)
+        _bench = State(initialValue: CaptureBench(sessions: sessions))
+    }
 
     var body: some Scene {
         MenuBarExtra("Tacit Type", systemImage: "mouth") {
@@ -28,6 +38,8 @@ struct TacitTypeApp: App {
         Settings {
             SettingsView()
                 .environment(devices)
+                .environment(sessions)
+                .environment(bench)
         }
     }
 }
