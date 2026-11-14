@@ -48,6 +48,8 @@ final class DeviceManager {
     private(set) var paired: PairedPhone?
     private(set) var nearby: [NearbyPhone] = []
     private(set) var lastStatus: DeviceStatus?
+    /// The connected iPhone's `hello`. Its model and versions go into session manifests.
+    private(set) var peerHello: Hello?
     private(set) var clockEstimate: ClockSample?
     private(set) var isPathViable = true
 
@@ -217,6 +219,7 @@ final class DeviceManager {
             captureReceiver?.linkDropped()
             stopClockSync()
             lastStatus = nil
+            peerHello = nil
             isPathViable = true
             if reason == .timedOut { consecutiveTimeouts += 1 }
             if reason == .authenticationFailed || consecutiveTimeouts >= Self.timeoutsBeforeRejected {
@@ -242,6 +245,7 @@ final class DeviceManager {
                 savePaired()
             }
             connectionState = .connected(deviceName: hello.deviceName)
+            peerHello = hello
             backoff.reset()
             consecutiveTimeouts = 0
             Self.log.notice("Connected to \(hello.deviceName, privacy: .public) (\(hello.deviceModel, privacy: .public), app \(hello.appVersion, privacy: .public))")
@@ -498,6 +502,7 @@ final class DeviceManager {
         retryTask = nil
         stopClockSync()
         lastStatus = nil
+        peerHello = nil
         clockEstimate = nil
         connectionState = .notPaired
     }

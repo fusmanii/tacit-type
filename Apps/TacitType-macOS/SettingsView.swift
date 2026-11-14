@@ -8,7 +8,7 @@ struct SettingsView: View {
             Tab("Hotkeys", systemImage: "keyboard") { PlaceholderView(title: "Hotkeys", milestone: "M4") }
             Tab("Dictation", systemImage: "waveform") { PlaceholderView(title: "Dictation", milestone: "M4") }
             Tab("Commands", systemImage: "command") { PlaceholderView(title: "Commands", milestone: "M5") }
-            Tab("Data", systemImage: "externaldrive") { PlaceholderView(title: "Data", milestone: "M3") }
+            Tab("Data", systemImage: "externaldrive") { DataSettingsView() }
             Tab("Diagnostics", systemImage: "stethoscope") { DiagnosticsView() }
         }
         .frame(width: 560, height: 520)

@@ -16,15 +16,18 @@ public struct Hello: Codable, Sendable, Equatable {
     public var deviceName: String
     public var deviceModel: String
     public var appVersion: String
+    /// For example "18.2". Goes into each session manifest. Optional so older peers still decode.
+    public var osVersion: String?
     public var protocolVersion: UInt8
     public var capabilities: [String]
 
-    public init(deviceId: UUID, deviceName: String, deviceModel: String, appVersion: String,
+    public init(deviceId: UUID, deviceName: String, deviceModel: String, appVersion: String, osVersion: String? = nil,
                 protocolVersion: UInt8 = Constants.protocolVersion, capabilities: [String] = []) {
         self.deviceId = deviceId
         self.deviceName = deviceName
         self.deviceModel = deviceModel
         self.appVersion = appVersion
+        self.osVersion = osVersion
         self.protocolVersion = protocolVersion
         self.capabilities = capabilities
     }

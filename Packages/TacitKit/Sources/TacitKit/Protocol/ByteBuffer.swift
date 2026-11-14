@@ -12,6 +12,8 @@ struct ByteWriter {
         withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) }
     }
 
+    mutating func write(bytes: some Sequence<UInt8>) { data.append(contentsOf: bytes) }
+
     mutating func write(_ value: Float) { write(value.bitPattern) }
     mutating func write(_ value: Double) { write(value.bitPattern) }
 }
@@ -37,6 +39,12 @@ struct ByteReader {
         }
         offset += size
         return T(littleEndian: value)
+    }
+
+    mutating func readBytes(_ count: Int) throws(ProtocolDecodeError) -> Data {
+        guard count >= 0, remaining >= count else { throw .truncated }
+        defer { offset += count }
+        return data.subdata(in: offset ..< offset + count)
     }
 
     mutating func read(_: Float.Type = Float.self) throws(ProtocolDecodeError) -> Float {

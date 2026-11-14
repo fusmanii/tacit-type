@@ -43,6 +43,8 @@ public struct SessionManifest: Codable, Sendable, Equatable {
     public var promptId: String?
     public var promptText: String?
     public var commandId: String?
+    /// Groups the takes of one Recorder sitting, so training can hold out whole sittings.
+    public var sittingId: UUID?
     public var device: Device
     public var appVersions: AppVersions
     public var protocolVersion: UInt8
@@ -59,7 +61,7 @@ public struct SessionManifest: Codable, Sendable, Equatable {
 
     public init(sessionId: UUID, createdAt: Date, mode: SessionMode, speechStyle: SpeechStyle,
                 promptId: String? = nil, promptText: String? = nil, commandId: String? = nil,
-                device: Device, appVersions: AppVersions,
+                sittingId: UUID? = nil, device: Device, appVersions: AppVersions,
                 protocolVersion: UInt8 = Constants.protocolVersion,
                 featureSchemaVersion: UInt16 = Constants.featureSchemaVersion,
                 firstFaceTs: Double? = nil, firstAudioTs: Double? = nil,
@@ -73,6 +75,7 @@ public struct SessionManifest: Codable, Sendable, Equatable {
         self.promptId = promptId
         self.promptText = promptText
         self.commandId = commandId
+        self.sittingId = sittingId
         self.device = device
         self.appVersions = appVersions
         self.protocolVersion = protocolVersion
@@ -86,5 +89,18 @@ public struct SessionManifest: Codable, Sendable, Equatable {
         self.audioGapsFilled = audioGapsFilled
         self.measuredAvOffsetMs = measuredAvOffsetMs
         self.quality = quality
+    }
+}
+
+extension SessionManifest {
+    /// Copies the capture numbers into the manifest.
+    public mutating func fill(from metrics: CaptureMetrics) {
+        firstFaceTs = metrics.firstFaceTs
+        firstAudioTs = metrics.firstAudioTs
+        frameCount = metrics.frameCount
+        measuredFps = metrics.measuredFps
+        trackedRatio = metrics.trackedRatio
+        droppedFrames = metrics.droppedFrames
+        audioGapsFilled = metrics.audioGapsFilled
     }
 }

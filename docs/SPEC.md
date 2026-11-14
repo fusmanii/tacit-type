@@ -63,7 +63,7 @@ Control messages carry JSON payloads (`Codable`). Data messages carry packed lit
 
 | Type | Name | Direction | Payload |
 | --- | --- | --- | --- |
-| 0x01 | `hello` | both | JSON: deviceId, deviceName, deviceModel, appVersion, protocolVersion, capabilities |
+| 0x01 | `hello` | both | JSON: deviceId, deviceName, deviceModel, appVersion, osVersion?, protocolVersion, capabilities |
 | 0x02 | `start` | Mac → iPhone | JSON: sessionId (UUID), mode (`record` / `dictate` / `command`), streams (`face`, `audio`), promptText? |
 | 0x03 | `stop` | Mac → iPhone | JSON: sessionId |
 | 0x04 | `status` | iPhone → Mac | JSON: state, trackingState, faceDetected, thermalState, batteryLevel, isCharging |
@@ -231,6 +231,7 @@ Step 1 makes the data engine: a Recorder window that walks the user through prom
 | speechStyle | `aloud` / `whisper` / `silent` / `negative` | Set by the Recorder; `dictate` defaults to `aloud`, `command` to `silent` |
 | promptId, promptText | `harvard-03-07`, "The birch canoe…" | null outside the Recorder |
 | commandId | `send` | Only for command takes |
+| sittingId | UUID | One per Recorder sitting, so training can hold out whole sittings. Absent outside the Recorder |
 | device | `iPhone16,1`, iOS 18.2 |  |
 | appVersions, protocolVersion, featureSchemaVersion |  | Reject mixing schema versions in training |
 | firstFaceTs, firstAudioTs | 81234.512, 81234.498 | iPhone host-clock seconds |
@@ -263,6 +264,15 @@ The review strip draws the audio waveform with `jawOpen` and `mouthClose` curves
 - Sync check: cross-correlate the audio energy envelope with `jawOpen` (both resampled to 100 Hz). Report the lag; pass if |lag| < 20 ms. Store the lag in every later manifest of that sitting as `measuredAvOffsetMs`.
 
 Flagged takes are saved with `quality.ok = false` and excluded by the Python loader by default.
+
+Flag names: `poor_tracking`, `no_speech`, `audible_in_silent`, `too_short`, `too_long`, `sync_offset`, `sync_failed`, `incomplete`. The checks live in `TacitKit/Features/TakeQuality.swift` and `SyncCheck.swift`.
+
+Recorder details settled in M3:
+
+- The Mac sends `start` as the last count of the 3-2-1 begins, so the camera is already running when the user starts. Each take therefore opens with about 0.3 s of lead-in. The duration check measures from the end of the countdown.
+- The silent sentence block repeats the aloud block's 50 sentences in a new order. Sentences with no accepted aloud take come first, so sittings work through all 720.
+- The Commands block runs in rounds: 10 silent rounds of the whole list, each shuffled, then 3 aloud rounds. Until Step 3 has a command list it uses the starter set.
+- Keys beyond the four above: **S** skips a prompt, and **Space** on the review strip replays the take.
 
 ### Python loader (ml/silentml/data.py)
 
