@@ -52,6 +52,8 @@ final class DeviceManager {
     private(set) var isPathViable = true
 
     let macId: UUID
+    /// Gets face batches, audio, status and errors while a session runs.
+    @ObservationIgnored weak var captureReceiver: CaptureMessageReceiver?
 
     @ObservationIgnored private let keychain = KeychainStore.default
     @ObservationIgnored private var browser: NWBrowser?
@@ -212,6 +214,7 @@ final class DeviceManager {
             isPathViable = viable
         case let .closed(reason):
             self.link = nil
+            captureReceiver?.linkDropped()
             stopClockSync()
             lastStatus = nil
             isPathViable = true
@@ -243,8 +246,11 @@ final class DeviceManager {
             consecutiveTimeouts = 0
             Self.log.notice("Connected to \(hello.deviceName, privacy: .public) (\(hello.deviceModel, privacy: .public), app \(hello.appVersion, privacy: .public))")
             startClockSync(on: link)
+        case .faceBatch, .audioChunk:
+            captureReceiver?.receive(message)
         case let .status(status):
             lastStatus = status
+            captureReceiver?.receive(message)
             if status.thermalState == .serious || status.thermalState == .critical {
                 Self.log.warning("iPhone thermal state is \(status.thermalState.rawValue)")
             }
@@ -265,6 +271,7 @@ final class DeviceManager {
             link.cancel()
         case let .error(error):
             Self.log.error("iPhone reported \(error.code.rawValue): \(error.message)")
+            captureReceiver?.receive(message)
         default:
             Self.log.notice("Ignoring \(String(describing: message.type)) from iPhone")
         }
@@ -280,6 +287,13 @@ final class DeviceManager {
             retryTask = nil
             evaluateConnection()
         }
+    }
+
+    /// Sends on the connected link. False if the iPhone isn't connected.
+    func send(_ message: Message) -> Bool {
+        guard let link, isConnected else { return false }
+        link.send(message)
+        return true
     }
 
     // MARK: Clock sync

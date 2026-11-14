@@ -34,6 +34,7 @@ private let everyMessage: [Message] = [
     .audioChunk(AudioChunk(ptsOfFirstSample: 81_234.498, samples: (0 ..< 1_600).map { Int16(truncatingIfNeeded: $0 * 37) })),
     .audioChunk(AudioChunk(ptsOfFirstSample: 0, samples: [.min, -1, 0, 1, .max])),
     .error(ProtocolErrorMessage(code: .versionMismatch, message: "expected 1, got 2")),
+    .error(ProtocolErrorMessage(code: .busy, message: "The camera is in use")),
 ]
 
 @Suite("Message codecs")
@@ -123,6 +124,13 @@ struct ConstantsTests {
         #expect(Constants.blendShapeOrder.count == Constants.blendShapeCount)
         #expect(Set(Constants.blendShapeOrder).count == Constants.blendShapeCount)
         #expect(Constants.blendShapeOrder == Constants.blendShapeOrder.sorted())
+    }
+
+    @Test func lipVertexIndicesAreSixtyFourDistinctMeshVertices() {
+        let indices = Constants.lipVertexIndices
+        #expect(indices.count == Constants.lipVertexCount)
+        #expect(Set(indices).count == Constants.lipVertexCount)
+        #expect(indices.allSatisfy { (0 ..< Constants.faceMeshVertexCount).contains($0) })
     }
 
     @Test func mouthBlendShapesResolve() {

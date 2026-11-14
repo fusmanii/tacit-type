@@ -13,6 +13,8 @@ public enum Constants {
 
     public static let audioSampleRate: Double = 16_000
     public static let faceBatchInterval: TimeInterval = 0.1
+    /// The iPhone stops capturing on its own after this long without a `stop`.
+    public static let maxCaptureDuration: TimeInterval = 120
 
     /// `ARFaceGeometry` topology. Capture refuses to start if the device reports anything else.
     public static let faceMeshVertexCount = 1_220
@@ -20,8 +22,16 @@ public enum Constants {
     public static let lipVertexCount = 64
 
     /// Indices into `ARFaceGeometry.vertices`, chosen once with `LipVertexPickerView` (M2).
+    /// Slot 0 is the left mouth corner and slot 1 the right one (see `LipVertexSelector.Selection`).
     /// Never change after Step 1 data exists without bumping `featureSchemaVersion`.
-    public static let lipVertexIndices: [Int] = []
+    /// Picked on 2026-11-12 with a 9 mm radius, which reaches the outer edge of both lips,
+    /// and reviewed on the live mesh. Mouth corners are vertices 249 and 684.
+    public static let lipVertexIndices: [Int] = [
+        249, 684, 21, 271, 706, 548, 99, 256, 688, 565, 116, 253, 550, 101, 672, 28,
+        94, 559, 110, 713, 278, 690, 239, 556, 107, 26, 569, 120, 827, 397, 273, 237,
+        698, 263, 545, 724, 542, 288, 541, 92, 240, 683, 248, 708, 722, 543, 238, 674,
+        290, 553, 104, 93, 671, 1210, 96, 184, 1209, 633, 673, 25, 262, 697, 568, 681,
+    ]
 
     /// `ARFaceAnchor.BlendShapeLocation` raw values sorted by code point.
     /// This is the on-wire and on-disk order. `ml/silentml/constants.py` mirrors it and a pytest checks parity.

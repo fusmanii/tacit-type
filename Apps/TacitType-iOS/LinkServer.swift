@@ -5,6 +5,18 @@ import TacitKit
 import UIKit
 import os
 
+/// What the link needs from the app to serve `start`, `stop` and `status`.
+@MainActor
+protocol CaptureHost: AnyObject {
+    var deviceState: DeviceStatus.State { get }
+    var tracking: CaptureController.Tracking { get }
+    /// Starts capturing for `link`. Returns the error to send back if it can't.
+    func startCapture(_ request: StartCapture, from link: PeerLink) -> ProtocolErrorMessage?
+    /// Returns once the last batch for the session has been queued on the link.
+    func stopCapture(_ request: StopCapture, from link: PeerLink) async
+    func linkClosed(_ link: PeerLink)
+}
+
 struct PairedMac: Codable, Identifiable, Equatable {
     var id: UUID
     var name: String
@@ -24,8 +36,7 @@ final class LinkServer {
     private(set) var connectedMacIds: Set<UUID> = []
 
     let deviceId: UUID
-    /// Supplies `DeviceStatus.state` for status messages.
-    @ObservationIgnored var currentState: () -> DeviceStatus.State = { .idle }
+    @ObservationIgnored weak var host: CaptureHost?
 
     @ObservationIgnored private let keychain = KeychainStore.default
     @ObservationIgnored private var mainListener: NWListener?
@@ -165,6 +176,7 @@ final class LinkServer {
             }
             sessions[key] = nil
             refreshConnected()
+            host?.linkClosed(session.link)
         }
     }
 
@@ -222,11 +234,28 @@ final class LinkServer {
             session.link.cancel()
         case let .error(error):
             Self.log.error("Mac reported \(error.code.rawValue): \(error.message)")
-        case .start, .stop:
-            // Capture arrives in M2.
-            session.link.send(.error(ProtocolErrorMessage(code: .unsupported, message: "Capture isn't implemented yet")))
+        case let .start(request):
+            if let error = host?.startCapture(request, from: session.link) {
+                Self.log.error("Refused start \(request.sessionId, privacy: .public): \(error.message, privacy: .public)")
+                session.link.send(.error(error))
+            }
+            broadcastStatus()
+        case let .stop(request):
+            // The status that follows the last batch tells the Mac the session is complete.
+            Task {
+                await host?.stopCapture(request, from: session.link)
+                broadcastStatus()
+            }
         default:
             Self.log.notice("Ignoring \(String(describing: message.type)) from Mac")
+        }
+    }
+
+    /// Sends the current status to every connected Mac.
+    func broadcastStatus() {
+        let status = status
+        for session in sessions.values where session.kind == .main && session.macId != nil {
+            session.link.send(.status(status))
         }
     }
 
@@ -303,7 +332,8 @@ final class LinkServer {
         case .critical: .critical
         @unknown default: .critical
         }
-        return DeviceStatus(state: currentState(), trackingState: .notAvailable, faceDetected: false,
+        let tracking = host?.tracking ?? CaptureController.Tracking()
+        return DeviceStatus(state: host?.deviceState ?? .idle, trackingState: tracking.state, faceDetected: tracking.faceDetected,
                             thermalState: thermal, batteryLevel: device.batteryLevel,
                             isCharging: device.batteryState == .charging || device.batteryState == .full)
     }
