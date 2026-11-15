@@ -14,12 +14,11 @@ struct MenuContent: View {
         Divider()
 
         Text("Dictate: hold ⌃⌥Space")
-        Text("Command: hold ⌃⌥C")
+        Text("Silent dictate: hold ⌃⌥S")
 
         Divider()
 
         Button("Open Recorder…") { open(WindowID.recorder) }
-        Button("Commands…") { open(WindowID.commands) }
         Button("Settings…") {
             NSApplication.shared.bringToFront { openSettings() }
         }

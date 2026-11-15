@@ -10,7 +10,7 @@ protocol CaptureMessageReceiver: AnyObject {
     func linkDropped()
 }
 
-/// Sends `start` and `stop`, collects the session's face frames and audio, and hands back a
+/// Sends `start` and `stop`, collects the session's face frames, audio and mouth video, and hands back a
 /// finished `CaptureResult`.
 ///
 /// TCP keeps order, so the `status` the iPhone sends after its last batch marks the session complete.
@@ -41,6 +41,7 @@ final class SessionManager: CaptureMessageReceiver {
 
     struct CaptureResult: Sendable {
         var mode: SessionMode
+        var streams: [StreamKind]
         var recording: CaptureRecording
         var metrics: CaptureMetrics
         var endReason: EndReason
@@ -62,6 +63,7 @@ final class SessionManager: CaptureMessageReceiver {
     @ObservationIgnored private let devices: DeviceManager
     @ObservationIgnored private var recording: CaptureRecording?
     @ObservationIgnored private var mode: SessionMode = .record
+    @ObservationIgnored private var streams: [StreamKind] = StreamKind.all
     @ObservationIgnored private var startSentAt: Double = 0
     @ObservationIgnored private var endReason: EndReason?
     /// A status sent before our `start` may still be in flight, so idle only counts once the
@@ -81,7 +83,7 @@ final class SessionManager: CaptureMessageReceiver {
     // MARK: Control
 
     @discardableResult
-    func begin(mode: SessionMode, streams: [StreamKind] = [.face, .audio],
+    func begin(mode: SessionMode, streams: [StreamKind] = StreamKind.all,
                promptText: String? = nil) throws(BeginError) -> UUID {
         guard state == .idle else { throw .alreadyCapturing }
         let sessionId = UUID()
@@ -90,6 +92,7 @@ final class SessionManager: CaptureMessageReceiver {
             throw .notConnected
         }
         self.mode = mode
+        self.streams = streams
         recording = CaptureRecording(sessionId: sessionId)
         endReason = nil
         sawCapturingStatus = false
@@ -138,7 +141,7 @@ final class SessionManager: CaptureMessageReceiver {
             guard let iphoneTs, let offset else { return nil }
             return iphoneTs - offset - startSentAt
         }
-        let result = CaptureResult(mode: mode, recording: recording, metrics: metrics,
+        let result = CaptureResult(mode: mode, streams: streams, recording: recording, metrics: metrics,
                                    endReason: endReason ?? .complete,
                                    startToFirstFrame: sinceStart(metrics.firstFaceTs),
                                    startToFirstTrackedFrame: sinceStart(metrics.firstTrackedFaceTs),
@@ -160,7 +163,9 @@ final class SessionManager: CaptureMessageReceiver {
         Session \(result.recording.sessionId, privacy: .public) ended (\(String(describing: result.endReason), privacy: .public)): \
         start→face \(ms(result.startToFirstFrame), privacy: .public), start→audio \(ms(result.startToFirstAudio), privacy: .public), \
         \(m.frameCount) frames at \(m.measuredFps, format: .fixed(precision: 1)) fps, \
-        dropped \(m.droppedFrames), tracked \(m.trackedRatio, format: .fixed(precision: 3)), audio gaps \(m.audioGapsFilled)
+        dropped \(m.droppedFrames), tracked \(m.trackedRatio, format: .fixed(precision: 3)), audio gaps \(m.audioGapsFilled), \
+        mouth \(m.mouthFrameCount)/\(m.expectedMouthFrames) at \(m.mouthFps, format: .fixed(precision: 1)) fps, \
+        luma \(m.meanLuma ?? 0, format: .fixed(precision: 0))
         """)
     }
 
@@ -175,6 +180,9 @@ final class SessionManager: CaptureMessageReceiver {
             if !hasFirstFrame, !batch.frames.isEmpty { hasFirstFrame = true }
         case let .audioChunk(chunk):
             recording.append(chunk)
+            self.recording = recording
+        case let .mouthBatch(batch):
+            recording.append(batch)
             self.recording = recording
         case let .status(status):
             if status.state == .capturing {

@@ -321,7 +321,7 @@ final class LinkServer {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
         return Hello(deviceId: deviceId, deviceName: displayName, deviceModel: Self.modelIdentifier,
                      appVersion: version, osVersion: UIDevice.current.systemVersion,
-                     capabilities: ["face", "audio"])
+                     capabilities: ["face", "audio", "mouth"])
     }
 
     private var status: DeviceStatus {
@@ -336,7 +336,8 @@ final class LinkServer {
         let tracking = host?.tracking ?? CaptureController.Tracking()
         return DeviceStatus(state: host?.deviceState ?? .idle, trackingState: tracking.state, faceDetected: tracking.faceDetected,
                             thermalState: thermal, batteryLevel: device.batteryLevel,
-                            isCharging: device.batteryState == .charging || device.batteryState == .full)
+                            isCharging: device.batteryState == .charging || device.batteryState == .full,
+                            meanLuma: host?.deviceState == .capturing ? tracking.meanLuma : nil)
     }
 
     private static let modelIdentifier: String = {

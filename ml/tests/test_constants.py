@@ -3,6 +3,12 @@ from pathlib import Path
 
 from silentml.constants import (
     BLEND_SHAPE_ORDER,
+    CROP_LANDMARK_ORDER,
+    MOUTH_CROP_SIZE,
+    MOUTH_FILE_HEADER_DTYPE,
+    MOUTH_FILE_VERSION,
+    MOUTH_FPS,
+    mouth_record_dtype,
     FACE_FILE_HEADER_DTYPE,
     FACE_FRAME_DTYPE,
     FEATURE_SCHEMA_VERSION,
@@ -40,3 +46,22 @@ def test_versions_match_swift():
     source = swift_source()
     assert f"protocolVersion: UInt8 = {PROTOCOL_VERSION}" in source
     assert f"featureSchemaVersion: UInt16 = {FEATURE_SCHEMA_VERSION}" in source
+
+
+def test_mouth_file_layout():
+    assert MOUTH_FILE_HEADER_DTYPE.itemsize == 12
+    assert mouth_record_dtype().itemsize == 104
+
+
+def test_crop_landmark_order_matches_swift():
+    block = re.search(r"enum CropLandmark: Int, CaseIterable, Sendable \{(.*?)\n\}", swift_source(), re.S)
+    assert block, "enum CropLandmark not found in Constants.swift"
+    cases = [name for line in re.findall(r"case (.*)", block.group(1)) for name in re.split(r",\s*", line.strip())]
+    assert tuple(cases) == CROP_LANDMARK_ORDER
+
+
+def test_mouth_constants_match_swift():
+    source = swift_source()
+    assert f"mouthCropSize = {MOUTH_CROP_SIZE}" in source
+    assert f"mouthFps: Double = {MOUTH_FPS}" in source
+    assert f"mouthFileVersion: UInt16 = {MOUTH_FILE_VERSION}" in source

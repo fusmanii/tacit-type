@@ -5,17 +5,28 @@ public struct StoredSession: Sendable, Equatable {
     public var manifest: SessionManifest
     public var frames: [FaceFrame]
     public var audio: [Int16]
+    /// Mouth crops as they came off the wire. Written as `mouth.bin` + `mouth.mp4`. Empty when the
+    /// session has no mouth video. `SessionStore.read` leaves it empty, use `readMouth` instead.
+    public var mouth: [MouthFrame]
 
-    public init(manifest: SessionManifest, frames: [FaceFrame], audio: [Int16]) {
+    public init(manifest: SessionManifest, frames: [FaceFrame], audio: [Int16], mouth: [MouthFrame] = []) {
         self.manifest = manifest
         self.frames = frames
         self.audio = audio
+        self.mouth = mouth
     }
+}
+
+/// A session's mouth video as read back from disk.
+public struct MouthTrack: Sendable, Equatable {
+    public var records: [MouthFile.Record]
+    /// One `mouthCropSize²` gray image per record, decoded from `mouth.mp4`.
+    public var pixels: [[UInt8]]
 }
 
 /// Writes and reads session folders:
 ///
-///     <root>/2026-11-07/<sessionId>/{manifest.json, face.bin, audio.wav}
+///     <root>/2026-11-07/<sessionId>/{manifest.json, face.bin, audio.wav, mouth.mp4, mouth.bin}
 ///
 /// `ml/silentml/data.py` reads the same folders. `manifest.json` is written last, so a folder
 /// with a manifest is a complete session.
@@ -23,6 +34,8 @@ public struct SessionStore: Sendable {
     public static let manifestName = "manifest.json"
     public static let faceName = "face.bin"
     public static let audioName = "audio.wav"
+    public static let mouthVideoName = "mouth.mp4"
+    public static let mouthName = "mouth.bin"
 
     public let root: URL
     /// Decides which day folder a session lands in.
@@ -48,13 +61,29 @@ public struct SessionStore: Sendable {
     }
 
     @discardableResult
-    public func write(_ session: StoredSession) throws -> URL {
+    public func write(_ session: StoredSession) async throws -> URL {
         let folder = folder(for: session.manifest)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try FaceFile.encode(session.frames).write(to: folder.appending(path: Self.faceName))
         try WavFile.encode(session.audio).write(to: folder.appending(path: Self.audioName))
+        if !session.mouth.isEmpty {
+            let blank = [UInt8](repeating: 0, count: Constants.mouthCropSize * Constants.mouthCropSize)
+            let pixels = session.mouth.map { (try? MouthJPEG.decode($0.jpeg)) ?? blank }
+            try await MouthVideo.write(pixels, to: folder.appending(path: Self.mouthVideoName))
+            try MouthFile.encode(session.mouth).write(to: folder.appending(path: Self.mouthName))
+        }
         try Self.encode(session.manifest).write(to: folder.appending(path: Self.manifestName), options: .atomic)
         return folder
+    }
+
+    /// Nil when the session has no mouth video.
+    public func readMouth(at folder: URL) async throws -> MouthTrack? {
+        let bin = folder.appending(path: Self.mouthName)
+        guard FileManager.default.fileExists(atPath: bin.path) else { return nil }
+        let records = try MouthFile.decode(Data(contentsOf: bin))
+        let pixels = try await MouthVideo.read(folder.appending(path: Self.mouthVideoName))
+        guard pixels.count == records.count else { throw SessionFileError.lengthMismatch }
+        return MouthTrack(records: records, pixels: pixels)
     }
 
     public func read(at folder: URL) throws -> StoredSession {

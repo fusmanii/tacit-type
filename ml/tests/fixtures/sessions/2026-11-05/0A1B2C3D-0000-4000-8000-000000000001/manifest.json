@@ -4,7 +4,6 @@
     "mac" : "0.1.0"
   },
   "audioGapsFilled" : 1,
-  "commandId" : "send",
   "createdAt" : "2026-11-05T00:00:00Z",
   "device" : {
     "model" : "iPhone16,1",
@@ -15,9 +14,12 @@
   "firstAudioTs" : 81234.498,
   "firstFaceTs" : 81234.512,
   "frameCount" : 12,
+  "meanLuma" : 111.5,
   "measuredAvOffsetMs" : -4.5,
   "measuredFps" : 60,
   "mode" : "record",
+  "mouthFps" : 25,
+  "mouthFrameCount" : 5,
   "promptId" : "harvard-03-07",
   "promptText" : "The birch canoe slid on the smooth planks.",
   "protocolVersion" : 1,

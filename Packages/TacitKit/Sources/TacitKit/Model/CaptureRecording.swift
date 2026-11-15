@@ -14,6 +14,11 @@ public struct CaptureMetrics: Sendable, Equatable {
     public var firstFaceTs: Double?
     public var firstTrackedFaceTs: Double?
     public var firstAudioTs: Double?
+    public var mouthFrameCount = 0
+    public var mouthFps: Double = 0
+    /// Mouth frames that should have arrived over the face frames' time span, at 25 fps.
+    public var expectedMouthFrames = 0
+    public var meanLuma: Double?
 
     public init() {}
 
@@ -28,6 +33,11 @@ public struct CaptureMetrics: Sendable, Equatable {
     public var droppedRatio: Double {
         let expected = frameCount + droppedFrames
         return expected > 0 ? Double(droppedFrames) / Double(expected) : 0
+    }
+
+    /// Mouth frames received as a share of those expected. 1 when none were expected.
+    public var mouthReceivedRatio: Double {
+        expectedMouthFrames > 0 ? min(1, Double(mouthFrameCount) / Double(expectedMouthFrames)) : 1
     }
 }
 
@@ -44,6 +54,9 @@ public struct CaptureRecording: Sendable {
     /// PTS of `audio[0]`, iPhone host clock.
     public private(set) var audioT0: Double?
     public private(set) var audioGapsFilled = 0
+    public private(set) var mouthFrames: [MouthFrame] = []
+    /// Mean luma of each mouth frame, decoded on arrival. NaN where the JPEG didn't decode.
+    public private(set) var mouthLuma: [Float] = []
 
     public init(sessionId: UUID) {
         self.sessionId = sessionId
@@ -51,6 +64,19 @@ public struct CaptureRecording: Sendable {
 
     public mutating func append(_ batch: FaceBatch) {
         frames.append(contentsOf: batch.frames)
+    }
+
+    public mutating func append(_ batch: MouthBatch) {
+        for frame in batch.frames {
+            mouthFrames.append(frame)
+            mouthLuma.append((try? MouthJPEG.decode(frame.jpeg)).map(MouthPixels.meanLuma) ?? .nan)
+        }
+    }
+
+    /// Decoded mouth crops, in frame order. Frames whose JPEG doesn't decode come back black.
+    public func mouthPixels() -> [[UInt8]] {
+        let blank = [UInt8](repeating: 0, count: Constants.mouthCropSize * Constants.mouthCropSize)
+        return mouthFrames.map { (try? MouthJPEG.decode($0.jpeg)) ?? blank }
     }
 
     public mutating func append(_ chunk: AudioChunk) {
@@ -87,6 +113,16 @@ public struct CaptureRecording: Sendable {
             metrics.measuredFps = Double(frames.count - 1) / (last.timestamp - first.timestamp)
         }
         metrics.droppedFrames = Self.droppedFrames(in: frames.map(\.timestamp))
+
+        metrics.mouthFrameCount = mouthFrames.count
+        if let first = mouthFrames.first, let last = mouthFrames.last, last.timestamp > first.timestamp {
+            metrics.mouthFps = Double(mouthFrames.count - 1) / (last.timestamp - first.timestamp)
+        }
+        if let first = frames.first, let last = frames.last {
+            metrics.expectedMouthFrames = Int(((last.timestamp - first.timestamp) * Constants.mouthFps + 1e-6).rounded(.down)) + 1
+        }
+        let luma = mouthLuma.filter { !$0.isNaN }
+        if !luma.isEmpty { metrics.meanLuma = Double(luma.reduce(0, +)) / Double(luma.count) }
         return metrics
     }
 

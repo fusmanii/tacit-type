@@ -38,16 +38,30 @@ enum SessionFixture {
             createdAt: Date(timeIntervalSince1970: 1_793_836_800), // 2026-11-05T00:00:00Z
             mode: .record, speechStyle: .aloud,
             promptId: "harvard-03-07", promptText: "The birch canoe slid on the smooth planks.",
-            commandId: "send", sittingId: UUID(uuidString: "0A1B2C3D-0000-4000-8000-0000000000AA")!,
+            sittingId: UUID(uuidString: "0A1B2C3D-0000-4000-8000-0000000000AA")!,
             device: .init(model: "iPhone16,1", osVersion: "18.2"),
             appVersions: .init(mac: "0.1.0", iphone: "0.1.0"),
             protocolVersion: 1, featureSchemaVersion: 1,
             firstFaceTs: faceT0, firstAudioTs: audioT0,
             frameCount: frames.count, measuredFps: 60, trackedRatio: 11.0 / 12,
             droppedFrames: 0, audioGapsFilled: 1, measuredAvOffsetMs: -4.5,
+            mouthFrameCount: 5, mouthFps: 25, meanLuma: 111.5,
             quality: .init(ok: true)
         )
-        return StoredSession(manifest: manifest, frames: frames, audio: audio(count: 3_200))
+        return StoredSession(manifest: manifest, frames: frames, audio: audio(count: 3_200), mouth: mouth)
+    }
+
+    static let mouthT0 = 81_234.52
+
+    /// A smooth gradient that brightens 10 levels a frame, so H.264 keeps it within a level or two.
+    static func mouthPixels(_ k: Int) -> [UInt8] { gradientFrame(step: 10 * k) }
+
+    static func mouthLandmarks(_ k: Int) -> [SIMD2<Float>] {
+        (0 ..< Constants.cropLandmarkCount).map { SIMD2(Float($0 * 10 + k), Float($0 * 5) - 20.5) }
+    }
+
+    static let mouth: [MouthFrame] = (0 ..< 5).map { k in
+        MouthFrame(timestamp: mouthT0 + Double(k) * 0.04, landmarks: mouthLandmarks(k), jpeg: try! MouthJPEG.encode(mouthPixels(k)))
     }
 
     /// A flagged silent take with every optional field left out.
@@ -55,7 +69,7 @@ enum SessionFixture {
         let manifest = SessionManifest(
             sessionId: UUID(uuidString: "0A1B2C3D-0000-4000-8000-000000000002")!,
             createdAt: Date(timeIntervalSince1970: 1_793_836_860),
-            mode: .command, speechStyle: .silent,
+            mode: .silent, speechStyle: .silent,
             device: .init(model: "iPhone16,1", osVersion: "18.2"),
             appVersions: .init(mac: "0.1.0", iphone: "0.1.0"),
             frameCount: 3, measuredFps: 60, trackedRatio: 1,
@@ -99,13 +113,29 @@ struct SessionStoreTests {
         #expect(decoded.sampleRate == 16_000)
     }
 
-    @Test func writesAndReadsSessionFolders() throws {
+    @Test func writesAndReadsSessionFolders() async throws {
         let store = temporaryStore()
         defer { try? store.deleteAll() }
         for session in SessionFixture.all {
-            let folder = try store.write(session)
+            let folder = try await store.write(session)
             #expect(folder.path.hasSuffix("2026-11-05/\(session.manifest.sessionId.uuidString)"))
-            #expect(try store.read(at: folder) == session)
+            var withoutMouth = session
+            withoutMouth.mouth = []
+            #expect(try store.read(at: folder) == withoutMouth)
+
+            let mouth = try await store.readMouth(at: folder)
+            if session.mouth.isEmpty {
+                #expect(mouth == nil)
+                #expect(!FileManager.default.fileExists(atPath: folder.appending(path: SessionStore.mouthVideoName).path))
+            } else {
+                let track = try #require(mouth)
+                #expect(track.records.map(\.timestamp) == session.mouth.map(\.timestamp))
+                #expect(track.records.map(\.landmarks) == session.mouth.map(\.landmarks))
+                for (k, pixels) in track.pixels.enumerated() {
+                    let error = zip(pixels, SessionFixture.mouthPixels(k)).reduce(0) { $0 + abs(Int($1.0) - Int($1.1)) }
+                    #expect(Double(error) / Double(pixels.count) < 2.5)
+                }
+            }
         }
         #expect(store.sessionFolders().count == 2)
         #expect(store.manifests() == SessionFixture.all.map(\.manifest))
@@ -116,25 +146,30 @@ struct SessionStoreTests {
 
     /// Fails when the on-disk format changes without the Python fixture being regenerated.
     /// Regenerate with `TACIT_WRITE_FIXTURE=1 make test-swift`, then fix `ml/tests/test_data.py`.
-    @Test func fixtureForPythonIsCurrent() throws {
+    /// `mouth.mp4` is compared by decoded frame count, since encoder output can differ between macOS versions.
+    @Test func fixtureForPythonIsCurrent() async throws {
         if ProcessInfo.processInfo.environment["TACIT_WRITE_FIXTURE"] != nil {
             let store = SessionStore(root: SessionFixture.root, timeZone: .gmt)
             try store.deleteAll()
-            for session in SessionFixture.all { try store.write(session) }
+            for session in SessionFixture.all { try await store.write(session) }
         }
         let store = temporaryStore()
         defer { try? store.deleteAll() }
         for session in SessionFixture.all {
-            let written = try store.write(session)
+            let written = try await store.write(session)
             let committed = SessionStore(root: SessionFixture.root, timeZone: .gmt).folder(for: session.manifest)
             // JSON formatting can differ between Foundation versions, so the manifest is compared by value.
             #expect(try SessionStore(root: SessionFixture.root).readManifest(at: committed) == session.manifest,
                     "manifest.json in ml/tests/fixtures is stale")
-            for name in [SessionStore.faceName, SessionStore.audioName] {
+            let names = [SessionStore.faceName, SessionStore.audioName] + (session.mouth.isEmpty ? [] : [SessionStore.mouthName])
+            for name in names {
                 let expected = try Data(contentsOf: written.appending(path: name))
                 let actual = try? Data(contentsOf: committed.appending(path: name))
                 #expect(actual == expected, "\(name) in ml/tests/fixtures is stale")
             }
+            let committedMouth = try await SessionStore(root: SessionFixture.root).readMouth(at: committed)
+            #expect(committedMouth?.pixels.count == (session.mouth.isEmpty ? nil : session.mouth.count),
+                    "mouth.mp4 in ml/tests/fixtures is stale")
         }
     }
 }
@@ -243,6 +278,9 @@ struct RecorderPromptTests {
     private let sentences = RecorderPrompts.harvardSentences(
         from: (0 ..< 720).map { "Sentence number \($0) goes here." }.joined(separator: "\n") + "\n")
 
+    private static let promptsFolder = SessionFixture.root.deletingLastPathComponent().deletingLastPathComponent()
+        .deletingLastPathComponent().appending(path: "prompts")
+
     @Test func harvardIdsCountListsAndSentences() {
         #expect(sentences.count == 720)
         #expect(sentences[0].id == "harvard-01-01")
@@ -251,33 +289,40 @@ struct RecorderPromptTests {
     }
 
     @Test func bundledHarvardFileHas720Sentences() throws {
-        let file = SessionFixture.root.deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().deletingLastPathComponent()
-            .appending(path: "Apps/TacitType-macOS/HarvardSentences.txt")
+        let file = Self.promptsFolder.appending(path: "harvard.txt")
         let parsed = RecorderPrompts.harvardSentences(from: try String(contentsOf: file, encoding: .utf8))
         #expect(parsed.count == 720)
         #expect(parsed[0].text == "The birch canoe slid on the smooth planks.")
         #expect(Set(parsed.map(\.text)).count == 720)
     }
 
-    @Test func sittingHasTheFiveBlocks() {
+    @Test func plainPromptListsSkipCommentsAndBlanks() {
+        let parsed = RecorderPrompts.prompts(from: "# everyday prompts\nrunning ten minutes late\n\n  sounds good, ship it  \n", prefix: "everyday")
+        #expect(parsed.map(\.id) == ["everyday-0001", "everyday-0002"])
+        #expect(parsed.map(\.text) == ["running ten minutes late", "sounds good, ship it"])
+    }
+
+    @Test func trainingSittingHasItsFourBlocks() {
         var generator = SystemRandomNumberGenerator()
         let blocks = RecorderPrompts.sitting(sentences: sentences, using: &generator)
-        #expect(blocks.map(\.kind) == RecorderBlock.Kind.allCases)
-        #expect(blocks.map(\.prompts.count) == [1, 50, 50, 260, 5])
+        #expect(blocks.map(\.kind) == [.syncCheck, .aloudSentences, .silentSentences, .neutral])
+        #expect(blocks.map(\.prompts.count) == [1, 50, 50, 3])
 
         #expect(blocks[1].prompts.allSatisfy { $0.style == .aloud })
         #expect(blocks[2].prompts.allSatisfy { $0.style == .silent })
         #expect(Set(blocks[1].prompts.map(\.promptId)) == Set(blocks[2].prompts.map(\.promptId)))
         #expect(Set(blocks[1].prompts.map(\.promptId)).count == 50)
+        #expect(blocks[3].prompts.allSatisfy { $0.style == .negative && $0.timeLimit == 10 && $0.promptId == "neutral-still" })
+    }
 
-        let commands = blocks[3].prompts
-        #expect(commands.prefix(200).allSatisfy { $0.style == .silent })
-        #expect(commands.suffix(60).allSatisfy { $0.style == .aloud })
-        #expect(Set(commands.prefix(20).compactMap(\.commandId)).count == 20)
-        #expect(commands.count { $0.commandId == "scroll-up" } == 13)
-
-        #expect(blocks[4].prompts.allSatisfy { $0.style == .negative && $0.timeLimit == 10 })
+    @Test func testSittingIsSilentAndComplete() {
+        var generator = SystemRandomNumberGenerator()
+        let prompts = (1 ... 100).map { (id: String(format: "test-%04d", $0), text: "Test prompt \($0)") }
+        let blocks = RecorderPrompts.testSitting(prompts: prompts, using: &generator)
+        #expect(blocks.map(\.kind) == [.syncCheck, .testSet])
+        #expect(blocks[1].prompts.count == 100)
+        #expect(blocks[1].prompts.allSatisfy { $0.style == .silent })
+        #expect(Set(blocks[1].prompts.map(\.promptId)) == Set(prompts.map(\.id)))
     }
 
     @Test func unrecordedSentencesComeFirst() {
@@ -287,10 +332,5 @@ struct RecorderPromptTests {
         let picked = Set(blocks[1].prompts.map(\.promptId))
         #expect(picked.count == 50)
         #expect(picked.isSuperset(of: sentences.suffix(30).map(\.id)))
-    }
-
-    @Test func commandIdsAreSlugs() {
-        #expect(RecorderPrompts.commandId(for: "Scroll Up") == "scroll-up")
-        #expect(RecorderPrompts.commandId(for: "send") == "send")
     }
 }

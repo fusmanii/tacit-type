@@ -4,11 +4,15 @@ import Observation
 import TacitKit
 import os
 
-/// Runs one Recorder sitting: five blocks of prompts, each take captured, checked, reviewed and
-/// saved as a session folder on accept.
+/// Runs one Recorder sitting: a training sitting (sync check, aloud and silent sentences, neutral) or
+/// the test-set sitting. Each take is captured, checked, reviewed and saved as a session folder on accept.
 @MainActor
 @Observable
 final class RecorderModel {
+    enum SittingKind: Equatable {
+        case training, testSet
+    }
+
     enum Phase: Equatable {
         /// Prompt on screen, waiting for Space.
         case ready
@@ -30,7 +34,10 @@ final class RecorderModel {
         var session: StoredSession
         var flags: [TakeQuality.Flag]
         var sync: SyncCheck.Result?
+        /// The sync check run against the mouth video instead of the face frames.
+        var videoSync: SyncCheck.Result?
         var trace: ReviewTrace
+        var mouth: MouthReview?
         var duration: Double
     }
 
@@ -38,8 +45,10 @@ final class RecorderModel {
         let id = UUID()
         /// Nil when the check found no correlation.
         var lagMs: Double?
+        var videoLagMs: Double?
 
         var passed: Bool { lagMs.map { abs($0) < SyncCheck.maxLagMs } ?? false }
+        var videoPassed: Bool { videoLagMs.map { abs($0) < SyncCheck.maxLagMs } ?? false }
     }
 
     private(set) var blocks: [RecorderBlock] = []
@@ -55,6 +64,7 @@ final class RecorderModel {
     private(set) var sittingOffsetMs: Double?
     private(set) var savedCount = 0
     private(set) var sittingId = UUID()
+    private(set) var sittingKind: SittingKind = .training
 
     let store: SessionStore
 
@@ -89,6 +99,14 @@ final class RecorderModel {
         syncRuns.count >= 5 && syncRuns.suffix(5).allSatisfy(\.passed)
     }
 
+    /// The same for the mouth video. This is the M3b check.
+    var videoSyncPassedFiveInARow: Bool {
+        syncRuns.count >= 5 && syncRuns.suffix(5).allSatisfy(\.videoPassed)
+    }
+
+    /// The test prompts from `test.txt` in the app bundle. Empty until that list exists.
+    var testPrompts: [(id: String, text: String)] { Self.bundledPrompts("test", prefix: "test") }
+
     var canSwitchBlock: Bool { phase == .ready || phase == .sittingDone }
 
     func prepareIfNeeded() {
@@ -97,15 +115,31 @@ final class RecorderModel {
 
     func newSitting() {
         guard canSwitchBlock else { return }
-        let sentences = Bundle.main.url(forResource: "HarvardSentences", withExtension: "txt")
-            .flatMap { try? String(contentsOf: $0, encoding: .utf8) }
-            .map(RecorderPrompts.harvardSentences(from:)) ?? []
-        if sentences.isEmpty { Self.log.fault("HarvardSentences.txt is missing from the app bundle") }
+        let harvard = Self.bundleText("harvard").map(RecorderPrompts.harvardSentences(from:)) ?? []
+        if harvard.isEmpty { Self.log.fault("harvard.txt is missing from the app bundle") }
+        let sentences = harvard + Self.bundledPrompts("everyday", prefix: "everyday")
         let recorded = Set(store.manifests()
             .filter { $0.mode == .record && $0.speechStyle == .aloud && $0.quality.ok }
             .compactMap(\.promptId))
         var generator = SystemRandomNumberGenerator()
-        blocks = RecorderPrompts.sitting(sentences: sentences, alreadyRecorded: recorded, using: &generator)
+        start(RecorderPrompts.sitting(sentences: sentences, alreadyRecorded: recorded, using: &generator), kind: .training)
+    }
+
+    /// The held-out test set, in a sitting of its own. Does nothing until `test.txt` exists.
+    func newTestSitting() {
+        guard canSwitchBlock else { return }
+        let prompts = testPrompts
+        guard !prompts.isEmpty else {
+            message = "There's no test prompt list yet. Add ml/prompts/test.txt and rebuild."
+            return
+        }
+        var generator = SystemRandomNumberGenerator()
+        start(RecorderPrompts.testSitting(prompts: prompts, using: &generator), kind: .testSet)
+    }
+
+    private func start(_ newBlocks: [RecorderBlock], kind: SittingKind) {
+        blocks = newBlocks
+        sittingKind = kind
         positions = Array(repeating: 0, count: blocks.count)
         blockIndex = 0
         sittingId = UUID()
@@ -114,6 +148,14 @@ final class RecorderModel {
         take = nil
         message = nil
         phase = .ready
+    }
+
+    private static func bundleText(_ name: String) -> String? {
+        Bundle.main.url(forResource: name, withExtension: "txt").flatMap { try? String(contentsOf: $0, encoding: .utf8) }
+    }
+
+    private static func bundledPrompts(_ name: String, prefix: String) -> [(id: String, text: String)] {
+        bundleText(name).map { RecorderPrompts.prompts(from: $0, prefix: prefix) } ?? []
     }
 
     func select(block index: Int) {
@@ -211,11 +253,15 @@ final class RecorderModel {
             return fail("No face or audio data arrived from the iPhone.")
         }
 
+        let expectsMouth = result.streams.contains(.mouth)
         var flags = TakeQuality.flags(metrics: result.metrics, audio: recording.audio, style: prompt.style,
-                                      duration: duration, expectedDuration: prompt.expectedDuration)
+                                      duration: duration, expectedDuration: prompt.expectedDuration,
+                                      expectsMouth: expectsMouth)
         if result.endReason != .complete { flags.append(.incomplete) }
 
+        let mouthPixels = recording.mouthPixels()
         var sync: SyncCheck.Result?
+        var videoSync: SyncCheck.Result?
         if currentBlock?.kind == .syncCheck {
             sync = SyncCheck.measure(frames: recording.frames, audio: recording.audio, audioT0: audioT0)
             if let sync {
@@ -223,13 +269,18 @@ final class RecorderModel {
             } else {
                 flags.append(.syncFailed)
             }
-            syncRuns.append(SyncRun(lagMs: sync?.lagMs))
+            if !mouthPixels.isEmpty {
+                videoSync = SyncCheck.measureVideo(times: recording.mouthFrames.map(\.timestamp), pixels: mouthPixels,
+                                                   audio: recording.audio, audioT0: audioT0)
+                if let videoSync, !videoSync.passed, !flags.contains(.syncOffset) { flags.append(.syncOffset) }
+            }
+            syncRuns.append(SyncRun(lagMs: sync?.lagMs, videoLagMs: videoSync?.lagMs))
         }
 
         let macVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
         var manifest = SessionManifest(
             sessionId: recording.sessionId, createdAt: .now, mode: .record, speechStyle: prompt.style,
-            promptId: prompt.promptId, promptText: prompt.text, commandId: prompt.commandId, sittingId: sittingId,
+            promptId: prompt.promptId, promptText: prompt.text, sittingId: sittingId,
             device: .init(model: helloAtStart?.deviceModel ?? "unknown", osVersion: helloAtStart?.osVersion ?? "unknown"),
             appVersions: .init(mac: macVersion, iphone: helloAtStart?.appVersion ?? "unknown"),
             measuredAvOffsetMs: sync?.lagMs ?? sittingOffsetMs,
@@ -237,10 +288,12 @@ final class RecorderModel {
         )
         manifest.fill(from: result.metrics)
 
+        let trace = ReviewTrace(frames: recording.frames, audio: recording.audio, audioT0: audioT0)
         take = Take(prompt: prompt,
-                    session: StoredSession(manifest: manifest, frames: recording.frames, audio: recording.audio),
-                    flags: flags, sync: sync,
-                    trace: ReviewTrace(frames: recording.frames, audio: recording.audio, audioT0: audioT0),
+                    session: StoredSession(manifest: manifest, frames: recording.frames, audio: recording.audio,
+                                           mouth: recording.mouthFrames),
+                    flags: flags, sync: sync, videoSync: videoSync, trace: trace,
+                    mouth: MouthReview(times: recording.mouthFrames.map { $0.timestamp - trace.origin }, pixels: mouthPixels),
                     duration: duration)
         phase = .review
         if prompt.style != .silent { play() }
@@ -254,16 +307,22 @@ final class RecorderModel {
 
     private func accept() {
         guard let take else { return }
-        do {
-            let folder = try store.write(take.session)
-            Self.log.info("Saved take \(take.prompt.promptId, privacy: .public) to \(folder.path, privacy: .public)")
-        } catch {
-            message = "Couldn't save the take. \(error.localizedDescription)"
-            return
+        stopPlayback()
+        phase = .finishing
+        flow = Task {
+            do {
+                let folder = try await store.write(take.session)
+                Self.log.info("Saved take \(take.prompt.promptId, privacy: .public) to \(folder.path, privacy: .public)")
+            } catch {
+                message = "Couldn't save the take. \(error.localizedDescription)"
+                phase = .review
+                return
+            }
+            savedCount += 1
+            if currentBlock?.kind == .syncCheck, let lag = take.sync?.lagMs { sittingOffsetMs = lag }
+            phase = .ready
+            advance()
         }
-        savedCount += 1
-        if currentBlock?.kind == .syncCheck, let lag = take.sync?.lagMs { sittingOffsetMs = lag }
-        advance()
     }
 
     private func discard() {
@@ -298,6 +357,14 @@ final class RecorderModel {
         return player.currentTime + take.trace.audioOffset
     }
 
+    /// The mouth crop to show: the one under the playhead, or the middle of the take when not playing.
+    func mouthImage(at time: Double?) -> CGImage? {
+        guard let mouth = take?.mouth, !mouth.images.isEmpty else { return nil }
+        guard let time else { return mouth.images[mouth.images.count / 2] }
+        let index = mouth.times.lastIndex { $0 <= time } ?? 0
+        return mouth.images[index]
+    }
+
     private func play() {
         guard let take else { return }
         player = try? AVAudioPlayer(data: WavFile.encode(take.session.audio))
@@ -325,6 +392,8 @@ struct ReviewTrace {
     static let bins = 600
 
     var duration: Double
+    /// iPhone host-clock time of the strip's left edge.
+    var origin: Double
     /// Peak level per bin, scaled so the loudest bin is 1. Quiet takes stay small.
     var waveform: [Double]
     var jawOpen: [Point]
@@ -338,6 +407,7 @@ struct ReviewTrace {
         let end = max(frames.last?.timestamp ?? audioT0, audioT0 + Double(audio.count) / rate)
         let duration = max(end - origin, 0.001)
         self.duration = duration
+        self.origin = origin
         audioOffset = audioT0 - origin
 
         var peaks = [Double](repeating: 0, count: Self.bins)
@@ -355,5 +425,25 @@ struct ReviewTrace {
         let tracked = frames.filter { $0.trackingFlags.contains(.isTracked) }
         jawOpen = tracked.map { Point(time: $0.timestamp - origin, value: Double($0.blendShapes[jaw])) }
         mouthClose = tracked.map { Point(time: $0.timestamp - origin, value: Double($0.blendShapes[close])) }
+    }
+}
+
+/// The mouth crops of a take, ready to draw in step with the review strip.
+struct MouthReview {
+    /// Seconds on the review strip's axis.
+    var times: [Double]
+    var images: [CGImage]
+
+    init(times: [Double], pixels: [[UInt8]]) {
+        self.times = times
+        images = pixels.compactMap { Self.image($0) }
+        if images.count != times.count { images = [] }
+    }
+
+    static func image(_ pixels: [UInt8], size: Int = Constants.mouthCropSize) -> CGImage? {
+        guard pixels.count == size * size, let provider = CGDataProvider(data: Data(pixels) as CFData) else { return nil }
+        return CGImage(width: size, height: size, bitsPerComponent: 8, bitsPerPixel: 8, bytesPerRow: size,
+                       space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGBitmapInfo(rawValue: 0), provider: provider,
+                       decode: nil, shouldInterpolate: true, intent: .defaultIntent)
     }
 }

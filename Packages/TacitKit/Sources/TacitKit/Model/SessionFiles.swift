@@ -4,6 +4,7 @@ public enum SessionFileError: Error, Equatable {
     case badMagic
     case schemaMismatch(found: UInt16)
     case lipVertexCountMismatch(found: UInt16)
+    case mouthVersionMismatch(found: UInt16)
     case lengthMismatch
     case unsupportedWav(String)
 }

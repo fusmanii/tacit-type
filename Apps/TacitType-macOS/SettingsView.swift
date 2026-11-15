@@ -7,7 +7,7 @@ struct SettingsView: View {
             Tab("Devices", systemImage: "iphone") { DevicesSettingsView() }
             Tab("Hotkeys", systemImage: "keyboard") { PlaceholderView(title: "Hotkeys", milestone: "M4") }
             Tab("Dictation", systemImage: "waveform") { PlaceholderView(title: "Dictation", milestone: "M4") }
-            Tab("Commands", systemImage: "command") { PlaceholderView(title: "Commands", milestone: "M5") }
+            Tab("Silent Dictation", systemImage: "mouth") { PlaceholderView(title: "Silent Dictation", milestone: "M5") }
             Tab("Data", systemImage: "externaldrive") { DataSettingsView() }
             Tab("Diagnostics", systemImage: "stethoscope") { DiagnosticsView() }
         }

@@ -47,6 +47,10 @@ struct RecorderView: View {
                 }
             }
             Spacer()
+            if let luma = devices.lastStatus?.meanLuma, Double(luma) < TakeQuality.lowLightLuma {
+                Label("Too dark for the mouth camera. Add light.", systemImage: "lightbulb.min")
+                    .foregroundStyle(.orange)
+            }
             if let thermal = devices.lastStatus?.thermalState, thermal == .serious || thermal == .critical {
                 Label("iPhone is hot. Frame rate may drop.", systemImage: "thermometer.high")
                     .foregroundStyle(.orange)
@@ -86,6 +90,9 @@ private struct RecorderSidebar: View {
                 }
                 Button("New Sitting") { recorder.newSitting() }
                     .disabled(!recorder.canSwitchBlock)
+                Button("New Test Set Sitting") { recorder.newTestSitting() }
+                    .disabled(!recorder.canSwitchBlock || recorder.testPrompts.isEmpty)
+                    .help(recorder.testPrompts.isEmpty ? "Add ml/prompts/test.txt to record the test set." : "Records the held-out test set once, in its own sitting.")
                 Button("Show Sessions in Finder") {
                     try? FileManager.default.createDirectory(at: recorder.store.root, withIntermediateDirectories: true)
                     NSWorkspace.shared.open(recorder.store.root)
@@ -199,8 +206,14 @@ private struct ReviewView: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            ReviewStrip(trace: take.trace)
-                .frame(height: 120)
+            HStack(spacing: 12) {
+                if take.mouth?.images.isEmpty == false {
+                    MouthPreview()
+                        .frame(width: 120, height: 120)
+                }
+                ReviewStrip(trace: take.trace)
+            }
+            .frame(height: 120)
             HStack(spacing: 14) {
                 Label("Jaw open", systemImage: "circle.fill").foregroundStyle(.blue)
                 Label("Mouth close", systemImage: "circle.fill").foregroundStyle(.orange)
@@ -218,6 +231,17 @@ private struct ReviewView: View {
                       systemImage: sync.passed ? "checkmark.circle.fill" : "xmark.circle.fill")
                     .foregroundStyle(sync.passed ? .green : .red)
             }
+            if recorder.currentBlock?.kind == .syncCheck, take.mouth?.images.isEmpty == false {
+                if let video = take.videoSync {
+                    Label(String(format: "Audio is %+.1f ms from the mouth video. The limit is ±20 ms.", video.lagMs),
+                          systemImage: video.passed ? "checkmark.circle.fill" : "xmark.circle.fill")
+                        .foregroundStyle(video.passed ? .green : .red)
+                } else {
+                    Label("Couldn't match the sound to the mouth video. Check the light and say each \"pa\" clearly.",
+                          systemImage: "questionmark.circle")
+                        .foregroundStyle(.secondary)
+                }
+            }
             if take.flags.isEmpty {
                 Label("Looks good", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
             } else {
@@ -228,6 +252,25 @@ private struct ReviewView: View {
             if recorder.currentBlock?.kind == .syncCheck { SyncHistory() }
         }
         .frame(maxWidth: 640)
+    }
+}
+
+/// The mouth crop under the playhead, so the video can be checked against the sound.
+private struct MouthPreview: View {
+    @Environment(RecorderModel.self) private var recorder
+
+    var body: some View {
+        TimelineView(.animation) { _ in
+            if let image = recorder.mouthImage(at: recorder.playheadTime) {
+                Image(decorative: image, scale: 1)
+                    .resizable()
+                    .interpolation(.medium)
+                    .aspectRatio(1, contentMode: .fit)
+            } else {
+                Color.black
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 }
 
@@ -285,11 +328,21 @@ private struct SyncHistory: View {
             HStack(spacing: 8) {
                 Text("Last runs")
                 ForEach(recorder.syncRuns.suffix(5)) { run in
-                    Text(run.lagMs.map { String(format: "%+.1f", $0) } ?? "none")
-                        .foregroundStyle(run.passed ? .green : .red)
+                    VStack(spacing: 2) {
+                        Text(run.lagMs.map { String(format: "%+.1f", $0) } ?? "none")
+                            .foregroundStyle(run.passed ? .green : .red)
+                        Text(run.videoLagMs.map { String(format: "%+.1f", $0) } ?? "none")
+                            .foregroundStyle(run.videoPassed ? .green : .red)
+                    }
                 }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("face")
+                    Text("video")
+                }
+                .font(.caption)
                 if recorder.syncPassedFiveInARow {
-                    Label("5 in a row under 20 ms", systemImage: "checkmark.seal.fill").foregroundStyle(.green)
+                    Label(recorder.videoSyncPassedFiveInARow ? "5 in a row under 20 ms, face and video" : "5 in a row under 20 ms, face",
+                          systemImage: "checkmark.seal.fill").foregroundStyle(.green)
                 }
             }
             .font(.callout)
@@ -359,6 +412,8 @@ private extension TakeQuality.Flag {
         case .syncOffset: "Face and audio are more than 20 ms apart."
         case .syncFailed: "Couldn't match the sound to your jaw. Say each \"pa\" clearly."
         case .incomplete: "The capture ended early. The end of the take may be missing."
+        case .lowLight: "The mouth video is too dark. Add light in front of you."
+        case .mouthDropped: "Some mouth video frames went missing."
         }
     }
 }
