@@ -12,6 +12,7 @@ public enum MessageType: UInt8, Sendable, CaseIterable {
     case forget = 0x09
     case faceBatch = 0x10
     case audioChunk = 0x11
+    case mouthBatch = 0x12
     case error = 0x7F
 }
 

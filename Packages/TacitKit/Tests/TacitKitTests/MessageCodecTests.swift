@@ -13,16 +13,25 @@ private func sampleFrame(_ i: Int) -> FaceFrame {
     )
 }
 
+private func sampleMouthFrame(_ k: Int) -> MouthFrame {
+    let landmarks: [SIMD2<Float>] = (0 ..< Constants.cropLandmarkCount).map { SIMD2(Float($0), Float(k) - 0.5) }
+    let bytes: [UInt8] = (0 ..< 900 + k).map { (i: Int) -> UInt8 in UInt8(truncatingIfNeeded: i * 7) }
+    return MouthFrame(timestamp: 81_234.5 + Double(k) * 0.04, landmarks: landmarks, jpeg: Data(bytes))
+}
+
 private let sessionId = UUID(uuidString: "0B8D6C4E-7E35-4B7D-9B1F-3C2E3F6A9D10")!
 
 private let everyMessage: [Message] = [
     .hello(Hello(deviceId: UUID(uuidString: "5D7A3B90-1C2E-4F6A-8B9D-0E1F2A3B4C5D")!, deviceName: "Faisal's iPhone", deviceModel: "iPhone16,1", appVersion: "0.1.0",
                  capabilities: ["face", "audio"])),
     .start(StartCapture(sessionId: sessionId, mode: .record, promptText: "The birch canoe slid on the smooth planks.")),
-    .start(StartCapture(sessionId: sessionId, mode: .command, streams: [.face, .audio])),
+    .start(StartCapture(sessionId: sessionId, mode: .silent, streams: [.face, .audio])),
+    .start(StartCapture(sessionId: sessionId, mode: .dictate, streams: StreamKind.all)),
     .stop(StopCapture(sessionId: sessionId)),
     .status(DeviceStatus(state: .capturing, trackingState: .normal, faceDetected: true,
                          thermalState: .fair, batteryLevel: 0.82, isCharging: true)),
+    .status(DeviceStatus(state: .capturing, trackingState: .normal, faceDetected: true,
+                         thermalState: .nominal, batteryLevel: 1, isCharging: true, meanLuma: 90)),
     .clockPing(ClockSync(t0: 1_000.125)),
     .clockPong(ClockSync(t0: 1_000.125, t1: 1_000.130, t2: 1_000.131)),
     .pairRequest(PairRequest(publicKey: Data((0 ..< 32).map { UInt8($0) }))),
@@ -33,6 +42,8 @@ private let everyMessage: [Message] = [
     .faceBatch(FaceBatch(frames: [.untracked(at: 42)])),
     .audioChunk(AudioChunk(ptsOfFirstSample: 81_234.498, samples: (0 ..< 1_600).map { Int16(truncatingIfNeeded: $0 * 37) })),
     .audioChunk(AudioChunk(ptsOfFirstSample: 0, samples: [.min, -1, 0, 1, .max])),
+    .mouthBatch(MouthBatch(frames: (0 ..< 5).map(sampleMouthFrame))),
+    .mouthBatch(MouthBatch(frames: [])),
     .error(ProtocolErrorMessage(code: .versionMismatch, message: "expected 1, got 2")),
     .error(ProtocolErrorMessage(code: .busy, message: "The camera is in use")),
 ]
@@ -131,6 +142,15 @@ struct ConstantsTests {
         #expect(indices.count == Constants.lipVertexCount)
         #expect(Set(indices).count == Constants.lipVertexCount)
         #expect(indices.allSatisfy { (0 ..< Constants.faceMeshVertexCount).contains($0) })
+    }
+
+    @Test func cropLandmarkIndicesAreTwelveDistinctMeshVertices() {
+        let indices = Constants.cropLandmarkIndices
+        #expect(indices.count == Constants.cropLandmarkCount)
+        #expect(Set(indices).count == indices.count)
+        #expect(indices.allSatisfy { (0 ..< Constants.faceMeshVertexCount).contains($0) })
+        #expect(indices[CropLandmark.mouthCornerLowX.rawValue] == Constants.lipVertexIndices[0])
+        #expect(indices[CropLandmark.mouthCornerHighX.rawValue] == Constants.lipVertexIndices[1])
     }
 
     @Test func mouthBlendShapesResolve() {

@@ -3,11 +3,14 @@ import Foundation
 // JSON payloads for control messages. Field names match the spec's wire table.
 
 public enum SessionMode: String, Codable, Sendable, CaseIterable {
-    case record, dictate, command
+    case record, dictate, silent
 }
 
 public enum StreamKind: String, Codable, Sendable, CaseIterable {
-    case face, audio
+    case face, audio, mouth
+
+    /// Every mode asks for all three, so real use doubles as training data.
+    public static let all: [StreamKind] = [.face, .audio, .mouth]
 }
 
 public struct Hello: Codable, Sendable, Equatable {
@@ -39,7 +42,7 @@ public struct StartCapture: Codable, Sendable, Equatable {
     public var streams: [StreamKind]
     public var promptText: String?
 
-    public init(sessionId: UUID, mode: SessionMode, streams: [StreamKind] = [.face, .audio], promptText: String? = nil) {
+    public init(sessionId: UUID, mode: SessionMode, streams: [StreamKind] = StreamKind.all, promptText: String? = nil) {
         self.sessionId = sessionId
         self.mode = mode
         self.streams = streams
@@ -74,15 +77,18 @@ public struct DeviceStatus: Codable, Sendable, Equatable {
     public var thermalState: ThermalState
     public var batteryLevel: Float
     public var isCharging: Bool
+    /// Mean luma (0 … 255) of the latest mouth crop while capturing mouth video. The Mac warns when it's low.
+    public var meanLuma: Float?
 
     public init(state: State, trackingState: TrackingState, faceDetected: Bool,
-                thermalState: ThermalState, batteryLevel: Float, isCharging: Bool) {
+                thermalState: ThermalState, batteryLevel: Float, isCharging: Bool, meanLuma: Float? = nil) {
         self.state = state
         self.trackingState = trackingState
         self.faceDetected = faceDetected
         self.thermalState = thermalState
         self.batteryLevel = batteryLevel
         self.isCharging = isCharging
+        self.meanLuma = meanLuma
     }
 }
 

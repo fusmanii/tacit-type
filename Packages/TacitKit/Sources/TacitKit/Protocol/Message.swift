@@ -11,6 +11,7 @@ public enum ProtocolDecodeError: Error, Equatable, Sendable {
 
 public enum ProtocolEncodeError: Error, Equatable, Sendable {
     case invalidFaceFrame
+    case invalidMouthFrame
     case tooManyFrames
     case payloadTooLarge
 }
@@ -28,6 +29,7 @@ public enum Message: Sendable, Equatable {
     case forget(Forget)
     case faceBatch(FaceBatch)
     case audioChunk(AudioChunk)
+    case mouthBatch(MouthBatch)
     case error(ProtocolErrorMessage)
 
     public var type: MessageType {
@@ -43,6 +45,7 @@ public enum Message: Sendable, Equatable {
         case .forget: .forget
         case .faceBatch: .faceBatch
         case .audioChunk: .audioChunk
+        case .mouthBatch: .mouthBatch
         case .error: .error
         }
     }
@@ -63,6 +66,7 @@ public enum Message: Sendable, Equatable {
         case let .error(payload): try Self.json(payload)
         case let .faceBatch(batch): try batch.encoded()
         case let .audioChunk(chunk): chunk.encoded()
+        case let .mouthBatch(batch): try batch.encoded()
         }
     }
 
@@ -80,6 +84,7 @@ public enum Message: Sendable, Equatable {
         case .error: self = .error(try Self.json(payload))
         case .faceBatch: self = .faceBatch(try FaceBatch(decoding: payload))
         case .audioChunk: self = .audioChunk(try AudioChunk(decoding: payload))
+        case .mouthBatch: self = .mouthBatch(try MouthBatch(decoding: payload))
         }
     }
 

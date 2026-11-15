@@ -2,7 +2,7 @@ import SwiftUI
 import TacitKit
 
 enum DataSettings {
-    /// When on, dictation and command sessions are saved as training data. Recorder takes always are.
+    /// When on, dictation and silent dictation sessions are saved as training data. Recorder takes always are.
     static let saveSessionsKey = "saveSessionsForTraining"
 }
 
@@ -26,7 +26,7 @@ struct DataSettingsView: View {
             Section {
                 Toggle("Save sessions for training", isOn: $saveSessions)
             } footer: {
-                Text("Keeps the face and audio data of every dictation and command on this Mac. Takes you accept in the Recorder are always saved.")
+                Text("Keeps the face, audio and mouth video of every dictation and silent dictation on this Mac. Takes you accept in the Recorder are always saved.")
             }
 
             Section("Sessions") {

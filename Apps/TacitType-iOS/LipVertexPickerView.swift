@@ -4,7 +4,10 @@ import SwiftUI
 import TacitKit
 import os
 
-/// One-off developer screen that chooses `Constants.lipVertexIndices`.
+/// One-off developer screen that chooses `Constants.lipVertexIndices` and `Constants.cropLandmarkIndices`.
+///
+/// The 12 crop landmarks (blue) come from `CropLandmarkSelector` on the same neutral capture. With
+/// no capture yet they show what the iPhone uses now, hardcoded or picked from ARKit's neutral face.
 ///
 /// Hold a neutral face and tap Capture. `LipVertexSelector` finds the inner lip contour, keeps the
 /// vertices near it and farthest-point samples 64. They're drawn on the live face mesh for review.
@@ -19,6 +22,8 @@ struct LipVertexPickerView: View {
     @State private var message: String?
     @State private var hasCamera = false
     @State private var copied = false
+    @State private var cropLandmarks: [Int]?
+    @State private var copiedCrop = false
     private static let log = Logger(subsystem: Constants.logSubsystem, category: "session")
 
     var body: some View {
@@ -68,7 +73,13 @@ struct LipVertexPickerView: View {
                 Button(copied ? "Copied" : "Copy Swift", systemImage: "doc.on.doc", action: copy)
                     .disabled(selection == nil)
             }
-            Text("Green: chosen. Yellow: mouth corners (slots 0 and 1). Red: inner lip contour. Grey: candidates.")
+            HStack {
+                Text(cropSummary).font(.footnote.monospacedDigit()).foregroundStyle(.secondary)
+                Spacer()
+                Button(copiedCrop ? "Copied" : "Copy Crop Landmarks", systemImage: "doc.on.doc", action: copyCrop)
+                    .disabled(cropLandmarks == nil)
+            }
+            Text("Green: chosen. Yellow: mouth corners (slots 0 and 1). Red: inner lip contour. Grey: candidates. Blue: crop landmarks.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
@@ -88,12 +99,18 @@ struct LipVertexPickerView: View {
         return "No indices hardcoded yet. Keep a relaxed, closed mouth and capture."
     }
 
+    private var cropSummary: String {
+        if let cropLandmarks { return "Crop landmarks: \(cropLandmarks.map(String.init).joined(separator: ", "))" }
+        return Constants.cropLandmarkIndices.isEmpty ? "Crop landmarks: picked from ARKit's neutral face" : "Crop landmarks: hardcoded"
+    }
+
     private func showHardcoded() {
         let indices = Constants.lipVertexIndices
-        guard !indices.isEmpty else { return }
-        scene.setMarkers(indices.enumerated().map { slot, index in
+        var markers = indices.enumerated().map { slot, index in
             PickerScene.Marker(index: index, kind: slot < 2 ? .corner : .chosen)
-        })
+        }
+        markers += CaptureController.cropLandmarkIndices.map { PickerScene.Marker(index: $0, kind: .crop) }
+        scene.setMarkers(markers)
     }
 
     private func captureNeutral() {
@@ -107,6 +124,17 @@ struct LipVertexPickerView: View {
         }
         neutral = geometry
         runSelection()
+    }
+
+    private func selectCropLandmarks() -> [Int]? {
+        guard let neutral else { return nil }
+        let corners = selection.map { (low: $0.indices[0], high: $0.indices[1]) } ?? CropLandmarkSelector.lipCorners
+        do {
+            return try CropLandmarkSelector.select(vertices: neutral.vertices, triangleIndices: neutral.triangles, mouthCorners: corners)
+        } catch {
+            message = "Couldn't pick crop landmarks: \(error)"
+            return nil
+        }
     }
 
     private func runSelection() {
@@ -124,6 +152,9 @@ struct LipVertexPickerView: View {
             markers += result.indices.enumerated().map { slot, index in
                 PickerScene.Marker(index: index, kind: slot < 2 ? .corner : .chosen)
             }
+            cropLandmarks = selectCropLandmarks()
+            copiedCrop = false
+            markers += (cropLandmarks ?? []).map { PickerScene.Marker(index: $0, kind: .crop) }
             scene.setMarkers(markers)
         } catch {
             selection = nil
@@ -144,13 +175,23 @@ struct LipVertexPickerView: View {
         Self.log.notice("Lip vertex indices (radius \(radiusMM) mm):\n\(literal, privacy: .public)")
         copied = true
     }
+
+    private func copyCrop() {
+        guard let cropLandmarks else { return }
+        let names = CropLandmark.allCases.map { "\($0)" }.joined(separator: ", ")
+        let literal = "/// Slots: \(names)\npublic static let cropLandmarkIndices: [Int] = [\n    "
+            + cropLandmarks.map(String.init).joined(separator: ", ") + ",\n]"
+        UIPasteboard.general.string = literal
+        Self.log.notice("Crop landmark indices:\n\(literal, privacy: .public)")
+        copiedCrop = true
+    }
 }
 
 /// Owns the ARSCNView and draws the face mesh plus marker dots that follow the live mesh.
 @MainActor
 final class PickerScene: NSObject, ARSCNViewDelegate {
     struct Marker: Sendable {
-        enum Kind: Sendable { case candidate, contour, chosen, corner }
+        enum Kind: Sendable { case candidate, contour, chosen, corner, crop }
         var index: Int
         var kind: Kind
     }
@@ -232,6 +273,7 @@ final class PickerScene: NSObject, ARSCNViewDelegate {
             .contour: sphere(0.0006, .systemRed),
             .chosen: sphere(0.0008, .systemGreen),
             .corner: sphere(0.0011, .systemYellow),
+            .crop: sphere(0.0014, .systemBlue),
         ]
     }()
 }

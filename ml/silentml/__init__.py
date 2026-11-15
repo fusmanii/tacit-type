@@ -1,1 +1,1 @@
-"""Tacit Type offline ML: dataset loading, features, encoder training and Core ML export."""
+"""Tacit Type offline ML: session loading, lip-reading preprocessing, fine-tuning and the sidecar."""

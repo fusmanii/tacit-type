@@ -35,10 +35,6 @@ struct TacitTypeApp: App {
                 .environment(recorder)
         }
 
-        Window("Commands", id: WindowID.commands) {
-            PlaceholderView(title: "Commands", milestone: "M5")
-        }
-
         Settings {
             SettingsView()
                 .environment(devices)
@@ -51,6 +47,5 @@ struct TacitTypeApp: App {
 
 enum WindowID {
     static let recorder = "recorder"
-    static let commands = "commands"
     static let pairing = "pairing"
 }

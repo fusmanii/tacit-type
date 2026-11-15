@@ -1,9 +1,10 @@
 import Foundation
 
-/// Measures the offset between face and audio from a "pa pa pa" take.
+/// Measures the offset between face and audio, and between mouth video and audio, from a "pa pa pa" take.
 ///
-/// The audio energy envelope and `jawOpen` are both put on one 100 Hz grid and cross-correlated.
-/// The peak is refined with a parabola, so the result resolves well below the 10 ms grid step.
+/// The audio energy envelope and a mouth signal (`jawOpen`, or how dark the middle of the mouth crop is)
+/// are both put on one 100 Hz grid and cross-correlated. The peak is refined with a parabola, so the
+/// result resolves well below the 10 ms grid step and below one 40 ms video frame.
 public enum SyncCheck {
     public struct Result: Sendable, Equatable {
         /// Positive when the sound arrives later than the matching jaw movement.
@@ -22,15 +23,28 @@ public enum SyncCheck {
 
     /// Nil when the take is under a second long or the two signals don't line up anywhere.
     public static func measure(frames: [FaceFrame], audio: [Int16], audioT0: Double) -> Result? {
+        let jaw = Constants.blendShapeOrder.firstIndex(of: "jawOpen")!
         let tracked = frames.filter { $0.trackingFlags.contains(.isTracked) }
-        guard let first = tracked.first, let last = tracked.last else { return nil }
+        return measure(times: tracked.map(\.timestamp), values: tracked.map { Double($0.blendShapes[jaw]) },
+                       audio: audio, audioT0: audioT0)
+    }
+
+    /// The same check against the mouth video. `pixels[i]` is the crop captured at `times[i]`.
+    public static func measureVideo(times: [Double], pixels: [[UInt8]], audio: [Int16], audioT0: Double) -> Result? {
+        guard times.count == pixels.count else { return nil }
+        return measure(times: times, values: pixels.map { MouthPixels.openness($0) }, audio: audio, audioT0: audioT0)
+    }
+
+    /// Correlates any mouth signal sampled at `times` (ascending, iPhone host clock) with the audio.
+    public static func measure(times: [Double], values: [Double], audio: [Int16], audioT0: Double) -> Result? {
+        guard let first = times.first, let last = times.last, times.count == values.count else { return nil }
         let audioEnd = audioT0 + Double(audio.count) / Constants.audioSampleRate
-        let start = max(first.timestamp, audioT0)
-        let count = Int(((min(last.timestamp, audioEnd) - start) * rate).rounded(.down))
+        let start = max(first, audioT0)
+        let count = Int(((min(last, audioEnd) - start) * rate).rounded(.down))
         guard count >= minBins else { return nil }
 
         let envelope = centered(energyEnvelope(audio, audioT0: audioT0, start: start, count: count))
-        let jaw = centered(jawOpen(tracked, start: start, count: count))
+        let jaw = centered(resample(times: times, values: values, start: start, count: count))
         let scale = (envelope.reduce(0) { $0 + $1 * $1 } * jaw.reduce(0) { $0 + $1 * $1 }).squareRoot()
         guard scale > 0 else { return nil }
 
@@ -68,18 +82,16 @@ public enum SyncCheck {
         }
     }
 
-    /// `jawOpen` linearly interpolated at the centre of each 10 ms bin from `start`.
-    static func jawOpen(_ frames: [FaceFrame], start: Double, count: Int) -> [Double] {
-        let channel = Constants.blendShapeOrder.firstIndex(of: "jawOpen")!
+    /// The signal linearly interpolated at the centre of each 10 ms bin from `start`.
+    static func resample(times: [Double], values: [Double], start: Double, count: Int) -> [Double] {
         var next = 1
         return (0 ..< count).map { bin in
             let time = start + (Double(bin) + 0.5) / rate
-            while next < frames.count - 1, frames[next].timestamp < time { next += 1 }
-            guard frames.count > 1 else { return Double(frames[0].blendShapes[channel]) }
-            let (a, b) = (frames[next - 1], frames[next])
-            let span = b.timestamp - a.timestamp
-            let weight = span > 0 ? min(max((time - a.timestamp) / span, 0), 1) : 0
-            return Double(a.blendShapes[channel]) * (1 - weight) + Double(b.blendShapes[channel]) * weight
+            guard times.count > 1 else { return values[0] }
+            while next < times.count - 1, times[next] < time { next += 1 }
+            let span = times[next] - times[next - 1]
+            let weight = span > 0 ? min(max((time - times[next - 1]) / span, 0), 1) : 0
+            return values[next - 1] * (1 - weight) + values[next] * weight
         }
     }
 

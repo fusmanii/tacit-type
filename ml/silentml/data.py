@@ -1,6 +1,7 @@
 """Session loader for the on-disk format written by Tacit Type's SessionStore.
 
-A session folder holds manifest.json, face.bin and audio.wav. The Swift side is
+A session folder holds manifest.json, face.bin and audio.wav, plus mouth.mp4 and mouth.bin when
+the iPhone sent mouth video. The Swift side is
 Packages/TacitKit/Sources/TacitKit/Model/SessionStore.swift. tests/test_data.py reads a fixture
 that the Swift tests keep current, so the two sides can't drift.
 """
@@ -22,6 +23,11 @@ from .constants import (
     FACE_FRAME_DTYPE,
     FEATURE_SCHEMA_VERSION,
     LIP_VERTEX_COUNT,
+    MOUTH_CROP_SIZE,
+    MOUTH_FILE_HEADER_DTYPE,
+    MOUTH_FILE_MAGIC,
+    MOUTH_FILE_VERSION,
+    mouth_record_dtype,
 )
 
 # Columns of Session.face: 52 blendshapes, 16 head transform values, 64 x 3 lip vertices.
@@ -46,6 +52,9 @@ class Session:
     manifest: dict
     tracked: np.ndarray  # [T] bool, False where ARKit had no face and the row is zeros
     path: Path
+    mouth: np.ndarray | None = None  # [N, 192, 192] uint8 grayscale crops, 0 ... 255
+    mouth_ts: np.ndarray | None = None  # [N] float64, same clock as face_ts
+    mouth_landmarks: np.ndarray | None = None  # [N, 12, 2] float32, crop pixels, CROP_LANDMARK_ORDER
 
 
 def read_face_file(path: Path) -> np.ndarray:
@@ -72,6 +81,45 @@ def read_audio_file(path: Path) -> np.ndarray:
         return np.frombuffer(file.readframes(file.getnframes()), dtype="<i2")
 
 
+def read_mouth_file(path: Path) -> np.ndarray:
+    """Returns the records of a mouth.bin as a structured array of mouth_record_dtype()."""
+    with open(path, "rb") as file:
+        header = np.fromfile(file, dtype=MOUTH_FILE_HEADER_DTYPE, count=1)
+        if len(header) != 1 or header["magic"][0] != MOUTH_FILE_MAGIC:
+            raise SessionFormatError(f"{path}: not a mouth.bin file")
+        version = int(header["version"][0])
+        if version != MOUTH_FILE_VERSION:
+            raise SessionFormatError(f"{path}: mouth file version {version}, expected {MOUTH_FILE_VERSION}")
+        records = np.fromfile(file, dtype=mouth_record_dtype(int(header["landmark_count"][0])))
+    if len(records) != int(header["frame_count"][0]):
+        raise SessionFormatError(f"{path}: header says {header['frame_count'][0]} frames, file has {len(records)}")
+    return records
+
+
+def read_mouth_video(path: Path) -> np.ndarray:
+    """Decodes mouth.mp4 to [N, 192, 192] uint8.
+
+    The Mac writes video range (luma 16 ... 235), so this expands it back to 0 ... 255 the same way
+    `MouthVideo.toFullRange` does in Swift.
+    """
+    import av  # imported here so face-only work doesn't need PyAV
+
+    frames = []
+    with av.open(str(path)) as container:
+        for frame in container.decode(video=0):
+            if frame.format.name not in ("yuv420p", "nv12"):
+                raise SessionFormatError(f"{path}: unexpected pixel format {frame.format.name}")
+            plane = frame.planes[0]  # Y, untouched by any range conversion
+            luma = np.frombuffer(plane, dtype=np.uint8).reshape(plane.height, plane.line_size)
+            frames.append(luma[:, : frame.width])
+    if not frames:
+        return np.zeros((0, MOUTH_CROP_SIZE, MOUTH_CROP_SIZE), dtype=np.uint8)
+    video = np.stack(frames).astype(np.int32)
+    if video.shape[1:] != (MOUTH_CROP_SIZE, MOUTH_CROP_SIZE):
+        raise SessionFormatError(f"{path}: frames are {video.shape[2]}x{video.shape[1]}, expected {MOUTH_CROP_SIZE}")
+    return np.clip(((video - 16) * 255 + 109) // 219, 0, 255).astype(np.uint8)
+
+
 def load_session(path: Path | str) -> Session:
     path = Path(path)
     manifest = json.loads((path / "manifest.json").read_text())
@@ -86,6 +134,14 @@ def load_session(path: Path | str) -> Session:
     )
     audio = read_audio_file(path / "audio.wav")
     audio_t0 = manifest.get("firstAudioTs")
+    mouth = mouth_ts = mouth_landmarks = None
+    if (path / "mouth.bin").exists():
+        records = read_mouth_file(path / "mouth.bin")
+        mouth = read_mouth_video(path / "mouth.mp4")
+        if len(mouth) != len(records):
+            raise SessionFormatError(f"{path}: mouth.mp4 has {len(mouth)} frames, mouth.bin has {len(records)}")
+        mouth_ts = records["timestamp"].copy()
+        mouth_landmarks = records["landmarks"].copy()
     return Session(
         face=face,
         face_ts=frames["timestamp"].copy(),
@@ -94,6 +150,9 @@ def load_session(path: Path | str) -> Session:
         manifest=manifest,
         tracked=(frames["tracking_flags"] & TRACKED_FLAG) != 0,
         path=path,
+        mouth=mouth,
+        mouth_ts=mouth_ts,
+        mouth_landmarks=mouth_landmarks,
     )
 
 

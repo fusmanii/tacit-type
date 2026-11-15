@@ -31,6 +31,9 @@ targets:
     platform: macOS
     sources:
       - Apps/TacitType-macOS
+      # Recorder prompt lists (harvard.txt, everyday.txt, test.txt), copied flat into the bundle.
+      - path: ml/prompts
+        buildPhase: resources
     dependencies:
       - package: TacitKit
     info:

@@ -13,7 +13,7 @@
   "featureSchemaVersion" : 1,
   "frameCount" : 3,
   "measuredFps" : 60,
-  "mode" : "command",
+  "mode" : "silent",
   "protocolVersion" : 1,
   "quality" : {
     "flags" : [

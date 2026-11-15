@@ -6,19 +6,15 @@ public struct RecorderPrompt: Sendable, Equatable {
     public var promptId: String
     public var text: String
     public var style: SpeechStyle
-    /// Only for command takes.
-    public var commandId: String?
     /// Seconds a normal take lasts. The duration check allows up to twice this.
     public var expectedDuration: Double
     /// Capture stops by itself after this many seconds.
     public var timeLimit: Double
 
-    public init(promptId: String, text: String, style: SpeechStyle, commandId: String? = nil,
-                expectedDuration: Double, timeLimit: Double? = nil) {
+    public init(promptId: String, text: String, style: SpeechStyle, expectedDuration: Double, timeLimit: Double? = nil) {
         self.promptId = promptId
         self.text = text
         self.style = style
-        self.commandId = commandId
         self.expectedDuration = expectedDuration
         self.timeLimit = timeLimit ?? 2 * expectedDuration
     }
@@ -26,7 +22,7 @@ public struct RecorderPrompt: Sendable, Equatable {
 
 public struct RecorderBlock: Sendable, Equatable, Identifiable {
     public enum Kind: String, Sendable, CaseIterable {
-        case syncCheck, aloudSentences, silentSentences, commands, negatives
+        case syncCheck, aloudSentences, silentSentences, testSet, neutral
     }
 
     public var kind: Kind
@@ -39,50 +35,43 @@ public struct RecorderBlock: Sendable, Equatable, Identifiable {
         case .syncCheck: "Sync check"
         case .aloudSentences: "Aloud sentences"
         case .silentSentences: "Silent sentences"
-        case .commands: "Commands"
-        case .negatives: "Negatives"
+        case .testSet: "Test set"
+        case .neutral: "Neutral"
         }
     }
 }
 
-/// Builds the five Recorder blocks for one sitting.
+/// Builds the Recorder's blocks. A training sitting has the sync check, aloud and silent sentences and
+/// the neutral takes. The test set runs once, in a sitting of its own, so it can be held out whole.
 public enum RecorderPrompts {
     public static let sentencesPerSitting = 50
-    public static let silentTakesPerCommand = 10
-    public static let aloudTakesPerCommand = 3
-    public static let negativeDuration = 10.0
-
-    /// Step 3's starter set. The Commands block uses it until the user has their own list (M5).
-    public static let starterCommands = [
-        "send", "undo", "copy", "paste", "next", "back", "scroll up", "scroll down", "new tab", "close tab",
-        "play", "pause", "mute", "volume up", "volume down", "screenshot", "yes", "no", "dictate", "lock",
-    ]
-
-    public static let negatives: [(id: String, text: String)] = [
-        ("negative-talk", "Talk normally about anything"),
-        ("negative-chew", "Chew"),
-        ("negative-smile", "Smile"),
-        ("negative-yawn", "Yawn"),
-        ("negative-still", "Stay still"),
-    ]
+    public static let neutralTakes = 3
+    public static let neutralDuration = 10.0
 
     public static let syncCheck = RecorderPrompt(promptId: "sync-pa", text: "pa pa pa pa pa", style: .aloud, expectedDuration: 3)
 
-    /// Parses the Harvard sentence file: one sentence per line, ten per list.
+    /// Neutral face and the `MouthActivity` threshold. Saved with speech style `negative`.
+    public static let neutral = RecorderPrompt(promptId: "neutral-still", text: "Stay still", style: .negative,
+                                               expectedDuration: neutralDuration, timeLimit: neutralDuration)
+
+    /// Parses the Harvard sentence file (`ml/prompts/harvard.txt`): one sentence per line, ten per list.
     /// Ids are `harvard-<list>-<sentence>`, both counted from 1.
     public static func harvardSentences(from text: String) -> [(id: String, text: String)] {
-        text.split(whereSeparator: \.isNewline)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-            .enumerated()
-            .map { index, sentence in
-                (String(format: "harvard-%02d-%02d", index / 10 + 1, index % 10 + 1), sentence)
-            }
+        lines(text).enumerated().map { index, sentence in
+            (String(format: "harvard-%02d-%02d", index / 10 + 1, index % 10 + 1), sentence)
+        }
     }
 
-    /// `scroll up` → `scroll-up`
-    public static func commandId(for phrase: String) -> String {
-        phrase.lowercased().split { !$0.isLetter && !$0.isNumber }.joined(separator: "-")
+    /// Parses a plain prompt list (`ml/prompts/everyday.txt`, `test.txt`): one prompt per line.
+    /// Ids are `<prefix>-<line>`, counted from 1, so a prompt keeps its id as long as the file only grows.
+    public static func prompts(from text: String, prefix: String) -> [(id: String, text: String)] {
+        lines(text).enumerated().map { index, sentence in (String(format: "\(prefix)-%04d", index + 1), sentence) }
+    }
+
+    private static func lines(_ text: String) -> [String] {
+        text.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("#") }
     }
 
     /// About 0.4 s per word plus time to get going.
@@ -90,42 +79,34 @@ public enum RecorderPrompts {
         0.8 + 0.4 * Double(sentence.split(separator: " ").count)
     }
 
-    /// The blocks for one sitting.
+    private static func sentencePrompts(_ style: SpeechStyle, _ list: [(id: String, text: String)]) -> [RecorderPrompt] {
+        list.map { RecorderPrompt(promptId: $0.id, text: $0.text, style: style, expectedDuration: expectedDuration(forSentence: $0.text)) }
+    }
+
+    /// The blocks of one training sitting.
     ///
-    /// Sentences the user has not recorded yet come first, so sittings work through all 720.
+    /// Sentences the user has not recorded yet come first, so sittings work through the whole corpus.
     /// The silent block repeats the aloud block's sentences in a new order, which gives every
-    /// silent take an aloud partner. Commands run in rounds, each a fresh shuffle of the whole list.
-    public static func sitting(sentences: [(id: String, text: String)], commands: [String] = starterCommands,
-                               alreadyRecorded: Set<String> = [],
+    /// silent take an aloud partner.
+    public static func sitting(sentences: [(id: String, text: String)], alreadyRecorded: Set<String> = [],
                                using generator: inout some RandomNumberGenerator) -> [RecorderBlock] {
         let fresh = sentences.filter { !alreadyRecorded.contains($0.id) }.shuffled(using: &generator)
         let repeats = sentences.filter { alreadyRecorded.contains($0.id) }.shuffled(using: &generator)
         let picked = Array((fresh + repeats).prefix(sentencesPerSitting))
-
-        func sentencePrompts(_ style: SpeechStyle, _ list: [(id: String, text: String)]) -> [RecorderPrompt] {
-            list.map { RecorderPrompt(promptId: $0.id, text: $0.text, style: style,
-                                      expectedDuration: expectedDuration(forSentence: $0.text)) }
-        }
-
-        var commandPrompts: [RecorderPrompt] = []
-        for (style, rounds) in [(SpeechStyle.silent, silentTakesPerCommand), (.aloud, aloudTakesPerCommand)] {
-            for _ in 0 ..< rounds {
-                commandPrompts += commands.shuffled(using: &generator).map { phrase in
-                    let id = commandId(for: phrase)
-                    return RecorderPrompt(promptId: "command-\(id)", text: phrase, style: style, commandId: id, expectedDuration: 1.5)
-                }
-            }
-        }
-
         return [
             RecorderBlock(kind: .syncCheck, prompts: [syncCheck]),
             RecorderBlock(kind: .aloudSentences, prompts: sentencePrompts(.aloud, picked)),
             RecorderBlock(kind: .silentSentences, prompts: sentencePrompts(.silent, picked.shuffled(using: &generator))),
-            RecorderBlock(kind: .commands, prompts: commandPrompts),
-            RecorderBlock(kind: .negatives, prompts: negatives.map {
-                RecorderPrompt(promptId: $0.id, text: $0.text, style: .negative,
-                               expectedDuration: negativeDuration, timeLimit: negativeDuration)
-            }),
+            RecorderBlock(kind: .neutral, prompts: Array(repeating: neutral, count: neutralTakes)),
+        ]
+    }
+
+    /// The test-set sitting: a sync check, then every test prompt mouthed silently, in a fixed shuffle.
+    public static func testSitting(prompts: [(id: String, text: String)],
+                                   using generator: inout some RandomNumberGenerator) -> [RecorderBlock] {
+        [
+            RecorderBlock(kind: .syncCheck, prompts: [syncCheck]),
+            RecorderBlock(kind: .testSet, prompts: sentencePrompts(.silent, prompts.shuffled(using: &generator))),
         ]
     }
 }

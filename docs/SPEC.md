@@ -2,27 +2,27 @@
 
 Nov 7, 2026 · @faisal
 
-Tacit Type is a Mac menu-bar app that triggers a docked iPhone to stream TrueDepth face data and audio, then turns it into typed text: first spoken or whispered speech, then silently mouthed commands. This spec covers build steps 1–3 and is written to be handed to Claude Code.
+Tacit Type is a Mac menu-bar app that triggers a docked iPhone to stream TrueDepth face data and audio, then turns it into typed text: first spoken or whispered speech, then silently mouthed sentences read from mouth video. This spec covers build steps 1–3 and is written to be handed to Claude Code.
 
 ## Scope
 
-v1 ships three things, in order: a synced face + audio recorder, a spoken/whisper dictation mode, and a silent command classifier. Everything runs locally; no cloud calls.
+v1 ships three things, in order: a synced face + audio recorder, a spoken/whisper dictation mode, and silent dictation from mouth video. The app runs entirely locally; only model fine-tuning may use a rented GPU.
 
 | Step | Delivers | Done when |
 | --- | --- | --- |
-| 1. Recorder | iPhone streams ARKit face frames + mic audio to the Mac; Mac saves timestamped sessions | A 60 s session saves with < 1% dropped frames and audio/face drift < 20 ms |
+| 1. Recorder | iPhone streams ARKit face frames, mouth video and mic audio to the Mac; Mac saves timestamped sessions | A 60 s session saves with < 1% dropped frames and face/audio/video drift < 20 ms |
 | 2. Spoken / whisper mode | Hotkey → iPhone mic audio → WhisperKit on Mac → text typed into the focused app | Whispered sentence appears in the focused app < 1.5 s after release |
-| 3. Silent commands | Mouth a command (no sound) → Mac recognises it from face frames → runs an action | ≥ 95% top-1 on 20 user commands, < 2% false triggers per minute of normal talking |
+| 3. Silent dictation | Hold a hotkey, mouth a sentence with no sound → fine-tuned lip-reading model reads the mouth video → LLM cleanup → text typed | Fine-tuned model beats the pretrained baseline on held-out silent sittings; ≥ 7 of 10 everyday test phrases correct in meaning |
 
 **Platforms:** macOS 15+ (Apple silicon only), iOS 18+ on an iPhone with TrueDepth (Face ID). Swift 6, SwiftUI, Xcode 16+.
 
-**Out of scope for v1:** open-vocabulary silent dictation (Tier 2), Continuity Camera / webcam path, multi-user models, Windows, App Store distribution (ship as Developer ID notarised build + TestFlight for iOS), cloud sync, AirPods gestures (stub the trigger interface so it can be added later).
+**Out of scope for v1:** a silent command classifier (dropped), models that use Face ID data (recorded now for v2), working in the dark, multi-user models, the Continuity Camera / webcam path, Windows, App Store distribution (Developer ID build + TestFlight; the Python sidecar makes v1 developer-only), cloud sync, AirPods gestures (stub the trigger interface so they can be added later).
 
 ## Architecture
 
 &#91;embedded content: System architecture · iPhone sensor, encrypted link, Mac pipelines\]
 
-The iPhone app streams face frames and audio only between `start` and `stop`. Recording, dictation and command recognition all run on the Mac; model training runs offline in `ml/` and ships back as a Core ML file.
+The iPhone app streams face frames, mouth video and audio only between `start` and `stop`. Recording, dictation and lip-reading all run on the Mac; model training runs offline in `ml/` and the Mac app runs the result in a local Python sidecar.
 
 ## Project layout and wire protocol
 
@@ -34,15 +34,18 @@ tacittype/
   Packages/TacitKit/           # Swift package, used by both apps
     Sources/TacitKit/
       Protocol/                # Message enums, binary codecs, NWProtocolFramer
-      Model/                   # FaceFrame, AudioChunk, SessionManifest
-      Features/                # Feature extraction (Mac + Python parity tests)
-      Constants.swift          # lipVertexIndices, sample rates, protocol version
+      Model/                   # FaceFrame, MouthFrame, AudioChunk, SessionManifest
+      Features/                # MouthActivity and other shared feature code
+      Constants.swift          # lipVertexIndices, cropLandmarkIndices, rates, protocol version
     Tests/TacitKitTests/
   Apps/TacitType-iOS/          # iOS companion app
   Apps/TacitType-macOS/        # macOS menu-bar app
-  ml/                          # Python: dataset loader, training, Core ML export
+  ml/                          # Python: loader, fine-tuning, sidecar server
     pyproject.toml
-    silentml/{data,features,model,train,export}.py
+    prompts/                   # Harvard + everyday sentence lists
+    third_party/usr2/          # pinned submodule: USR 2.0 (primary model)
+    third_party/auto_avsr/     # pinned submodule: Auto-AVSR (fallback)
+    silentml/{data,preprocess,models,finetune,evaluate,serve}.py
   docs/                        # this spec, exported as SPEC.md
 ```
 
@@ -64,7 +67,7 @@ Control messages carry JSON payloads (`Codable`). Data messages carry packed lit
 | Type | Name | Direction | Payload |
 | --- | --- | --- | --- |
 | 0x01 | `hello` | both | JSON: deviceId, deviceName, deviceModel, appVersion, osVersion?, protocolVersion, capabilities |
-| 0x02 | `start` | Mac → iPhone | JSON: sessionId (UUID), mode (`record` / `dictate` / `command`), streams (`face`, `audio`), promptText? |
+| 0x02 | `start` | Mac → iPhone | JSON: sessionId (UUID), mode (`record` / `dictate` / `silent`), streams (`face`, `audio`, `mouth`), promptText? |
 | 0x03 | `stop` | Mac → iPhone | JSON: sessionId |
 | 0x04 | `status` | iPhone → Mac | JSON: state, trackingState, faceDetected, thermalState, batteryLevel, isCharging |
 | 0x05 | `clockPing` / 0x06 `clockPong` | both | JSON: t0, t1, t2 (seconds) for offset estimation |
@@ -73,6 +76,7 @@ Control messages carry JSON payloads (`Codable`). Data messages carry packed lit
 | 0x09 | `forget` | both | JSON: {}. Sender has deleted its key; receiver deletes its key too |
 | 0x10 | `faceBatch` | iPhone → Mac | Binary: N face frames, layout below |
 | 0x11 | `audioChunk` | iPhone → Mac | Binary: Float64 ptsOfFirstSample + Int16 PCM, 16 kHz mono |
+| 0x12 | `mouthBatch` | iPhone → Mac | Binary: N mouth crops + landmarks, layout below (Step 3) |
 | 0x7F | `error` | both | JSON: code, message |
 
 ### FaceFrame binary layout (one frame, 1,052 bytes with 64 lip vertices)
@@ -86,6 +90,10 @@ Control messages carry JSON payloads (`Codable`). Data messages carry packed lit
 | lipVertices | Float32 | 64 × 3 | `faceAnchor.geometry.vertices[i]` for i in `Constants.lipVertexIndices`, face-local coordinates (already head-pose free) |
 
 `faceBatch` = UInt16 frameCount + frames. The iPhone sends one batch every 100 ms (about 6 frames), or immediately on `stop`.
+
+### Mouth video (added for Step 3)
+
+`0x12 mouthBatch` (iPhone → Mac), binary: UInt16 frameCount, then per frame: Float64 timestamp (same host clock as face and audio), UInt8 landmarkCount, landmarkCount × (Float32 x, Float32 y) in crop pixels, UInt32 jpegLength, JPEG bytes (192×192 grayscale). Sent every 200 ms (about 5 frames), or immediately on `stop`. Only sent when `start.streams` includes `mouth`.
 
 ## Pairing, discovery and transport
 
@@ -112,13 +120,13 @@ The Mac and iPhone find each other with Bonjour and talk over a direct, encrypte
 
 **Reconnect:** Mac auto-connects to the last paired iPhone whenever it appears in the browser. On drop, retry with backoff 0.5 s → 1 → 2 → 5 s (cap). `NWConnection.pathUpdateHandler` drives UI state.
 
-**Clock sync:** on connect and every 10 s, run 5 `clockPing`/`clockPong` rounds; keep the round with the lowest RTT; offset = ((t1 − t0) + (t2 − t3)) / 2, where t3 is the Mac's receive time. Used only for latency metrics and logs. Face and audio already share the iPhone clock, so alignment between them never depends on this.
+**Clock sync:** on connect and every 10 s, run 5 `clockPing`/`clockPong` rounds; keep the round with the lowest RTT; offset = ((t1 − t0) + (t2 − t3)) / 2, where t3 is the Mac's receive time. Used only for latency metrics and logs. Face, audio and mouth video already share the iPhone clock, so alignment between them never depends on this.
 
-**Bandwidth budget:** face ≈ 63 KB/s + audio 32 KB/s ≈ 0.8 Mbit/s. No compression needed.
+**Bandwidth budget:** face ≈ 63 KB/s + audio 32 KB/s ≈ 0.8 Mbit/s. Mouth video adds ≈ 250 KB/s (25 fps × \~10 KB JPEG), ≈ 2.8 Mbit/s in total; only the mouth video is compressed.
 
 ## iOS companion app (Tacit Type for iPhone)
 
-The iPhone app is a thin sensor: it stays open on a MagSafe stand, keeps the camera off until the Mac sends `start`, then streams face frames and audio until `stop`. All processing happens on the Mac.
+The iPhone app is a thin sensor: it stays open on a MagSafe stand, keeps the camera off until the Mac sends `start`, then streams face frames, mouth video and audio until `stop`. All processing happens on the Mac.
 
 ### States
 
@@ -147,6 +155,18 @@ Leaving `capturing` always pauses the `ARSession`, so the green camera indicator
 - Target: first face frame < 450 ms after `start` arrives. Log it in every session. The TrueDepth camera alone takes about 420 ms to power on from off (measured Nov 2026), and no ARKit run option or video format shortens it.
 - Thermal: if `ProcessInfo.thermalState >= .serious`, report it in `status` (the Mac warns the user). Don't change the frame rate silently.
 
+### Mouth video crop
+
+The iPhone sends a loose, lightly normalised crop plus landmarks; the exact alignment the lip-reading model needs runs on the Mac in Python (Step 3). Preprocessing can then change without re-recording.
+
+1. **Frame rate:** keep the ARKit frame nearest each 40 ms tick, giving 25 fps, the rate both models were trained on (see Model preprocessing in Step 3).
+2. **Landmarks:** project 12 face-mesh vertices (4 eye corners, nose bridge, nose tip, nose base, 2 mouth corners, upper and lower lip centres, chin) into `frame.capturedImage` with `ARCamera.projectPoint`. These cover the 68-point positions both models align with (iBUG 28, 30, 33, 36, 39, 42, 45, 48, 54 and the mouth centre). Landmarks may fall outside the crop, so keep them as unclamped floats. Hardcode their indices in `Constants.cropLandmarkIndices`, picked with the same debug screen as the lip vertices. `CropLandmarkSelector` proposes them from ARKit's neutral mesh (eye and mouth holes, the face midline, and nose depth), and the picker's "Copy Crop Landmarks" button shows and copies that result. They were hardcoded on Nov 15, 2026. Changing them after mouth data exists bumps `mouthFileVersion`.
+3. **Crop:** a square centred on the mouth, side = 3 × mouth width, rotated so the eye line is level. Take it from the image's luma (Y) plane, so it's already grayscale. Resize to 192×192 with vImage.
+4. **Encode:** JPEG quality 85 (\~8–12 KB) on the capture queue, then send in `mouthBatch` with the landmarks mapped into crop pixels.
+5. **Light:** compute mean luma per crop and report it in `status`; the Mac warns when it's too dark.
+
+Cropping and encoding must not drop face frames: measure capture-queue time and keep it under 8 ms per frame.
+
 ### Lip vertex selection (one-off dev task)
 
 `ARFaceGeometry` has the same 1,220-vertex topology on every device. Build a debug screen `LipVertexPickerView` that, on a neutral face: (1) takes vertices inside a mouth bounding box in face-local space, (2) keeps those within \~6 mm of the lip contour, (3) farthest-point-samples 64 of them. Render them as dots over the face mesh for visual review. Hardcode the result in `Constants.lipVertexIndices` and never change it after Step 1 data exists. Any change bumps a `featureSchemaVersion`.
@@ -166,11 +186,11 @@ The Mac app is a menu-bar-only app (`LSUIElement = YES`, SwiftUI `MenuBarExtra`)
 | `DeviceManager` | `NWBrowser`, pairing flow, Keychain keys, connection lifecycle, reconnect, exposes `@Observable` state |
 | `TriggerCenter` | Turns inputs into `began` / `ended` events per mode. v1 source: `HotkeyTrigger`. Protocol `TriggerSource` so `AirPodsNodTrigger` can be added later |
 | `SessionManager` | Sends `start`/`stop`, receives batches, keeps per-session ring buffers, hands a finished `CaptureSession` to the active pipeline, optionally persists it |
-| `SessionStore` | Writes and reads the on-disk session format (Step 1) |
+| `SessionStore` | Writes and reads the on-disk session format (Step 1), including `mouth.mp4` via `AVAssetWriter` |
 | `DictationPipeline` | Audio → WhisperKit → cleanup → `TextInserter` (Step 2) |
-| `CommandPipeline` | Face frames → features → Core ML encoder → nearest prototype → `ActionRunner` (Step 3) |
+| `SilentDictationPipeline` | Mouth video → Python sidecar (lip-reading model) → LLM cleanup → `TextInserter` (Step 3) |
+| `ModelSidecar` | Starts, health-checks and restarts the Python model server; reports its status in Settings |
 | `TextInserter` | Puts text into the focused app |
-| `ActionRunner` | Runs a command's action |
 | `HUDController` | Small non-activating `NSPanel` near the menu bar showing listening / processing / result / error |
 
 ### Triggers (v1)
@@ -179,11 +199,11 @@ Push-to-talk: hold to capture, release to process. Use the `KeyboardShortcuts` S
 
 | Mode | Default hotkey | On key down | On key up |
 | --- | --- | --- | --- |
-| Dictate (spoken/whisper) | hold ⌃⌥Space | send `start` with streams `[audio, face]` | keep 300 ms tail, then `stop`, run `DictationPipeline` |
-| Command (silent) | hold ⌃⌥C | send `start` with streams `[face, audio]` | keep 200 ms tail, then `stop`, run `CommandPipeline` |
+| Dictate (spoken/whisper) | hold ⌃⌥Space | send `start` with streams `[audio, face, mouth]` | keep 300 ms tail, then `stop`, run `DictationPipeline` |
+| Silent dictate | hold ⌃⌥S | send `start` with streams `[mouth, face, audio]` | keep 300 ms tail, then `stop`, run `SilentDictationPipeline` |
 | Record (training) | from Recorder window | `start` with `promptText` | `stop` on button or prompt timer |
 
-Always request both streams, even when a mode only needs one. Every real use then doubles as training data, if the user has turned on "Save sessions for training" (off by default).
+Always request all three streams, even when a mode only needs one. Every real use then doubles as training data, if the user has turned on "Save sessions for training" (off by default).
 
 If the user taps instead of holding (< 250 ms), ignore it. If the iPhone isn't connected, the HUD shows "iPhone not connected" and nothing is sent.
 
@@ -197,13 +217,13 @@ On first run, prompt for Accessibility with `AXIsProcessTrustedWithOptions` and 
 
 ### Menu and windows
 
-- **Menu:** connection status (device name, green/grey dot), mode hotkeys, "Open Recorder…", "Commands…", "Settings…", "Quit".
-- **Settings:** Devices (pair, forget), Hotkeys, Dictation (model size, cleanup on/off), Commands, Data (save sessions toggle, data folder, delete all), Diagnostics (latency stats, last 50 log lines).
-- **Recorder** and **Commands** windows are specified in Steps 1 and 3.
+- **Menu:** connection status (device name, green/grey dot), mode hotkeys, "Open Recorder…", "Settings…", "Quit".
+- **Settings:** Devices (pair, forget), Hotkeys, Dictation (model size, cleanup on/off), Silent dictation (sidecar status, checkpoint path, LLM cleanup on/off), Data (save sessions toggle, data folder, delete all), Diagnostics (latency stats, last 50 log lines).
+- **Recorder** window is specified in Step 1.
 
 ### Logging and metrics
 
-Use `os.Logger` with subsystem `com.tacittype` and categories `net`, `session`, `dictation`, `command`. For every session record: trigger → first face frame, trigger → first audio, key up → text inserted, dropped frame count. Show rolling p50/p95 in Diagnostics.
+Use `os.Logger` with subsystem `com.tacittype` and categories `net`, `session`, `dictation`, `silent`. For every session record: trigger → first face frame, trigger → first audio, key up → text inserted, dropped frame count. Show rolling p50/p95 in Diagnostics.
 
 ## Step 1 — Recorder
 
@@ -216,21 +236,23 @@ Step 1 makes the data engine: a Recorder window that walks the user through prom
   manifest.json   # metadata, below
   face.bin        # 16-byte header + FaceFrame records, same layout as the wire
   audio.wav       # 16 kHz mono PCM Int16
+  mouth.mp4       # 192x192 grayscale mouth crops, H.264, 25 fps (Step 3)
+  mouth.bin       # per-frame timestamp + crop landmarks (Step 3)
   transcript.json # optional, written by Step 2 / labeling job
 ```
 
 - `face.bin` header: magic `SFCE` (4 bytes), UInt16 featureSchemaVersion, UInt16 lipVertexCount, UInt32 frameCount, UInt32 reserved. Records follow back to back, so Python reads them with `numpy.fromfile` and a structured dtype.
 - `audio.wav` starts at the PTS of the first audio sample. If chunks arrive with a gap (PTS jump > 1 ms), fill the gap with zeros so sample index ↔ time stays linear, and count it in `audioGapsFilled`.
+- `mouth.mp4`: written by the Mac with `AVAssetWriter` (H.264, high quality, constant 25 fps). The exact capture time of each frame lives in `mouth.bin`: magic `SMTH`, UInt16 version, UInt16 landmarkCount, UInt32 frameCount, then per frame Float64 timestamp + landmarks. The manifest adds `mouthFrameCount`, `mouthFps` and `meanLuma`.
 
 ### manifest.json fields
 
 | Field | Example | Notes |
 | --- | --- | --- |
 | sessionId, createdAt | UUID, ISO 8601 |  |
-| mode | `record` / `dictate` / `command` | Which pipeline triggered it |
-| speechStyle | `aloud` / `whisper` / `silent` / `negative` | Set by the Recorder; `dictate` defaults to `aloud`, `command` to `silent` |
+| mode | `record` / `dictate` / `silent` | Which pipeline triggered it |
+| speechStyle | `aloud` / `whisper` / `silent` / `negative` | Set by the Recorder; `dictate` defaults to `aloud`, `silent` to `silent` |
 | promptId, promptText | `harvard-03-07`, "The birch canoe…" | null outside the Recorder |
-| commandId | `send` | Only for command takes |
 | sittingId | UUID | One per Recorder sitting, so training can hold out whole sittings. Absent outside the Recorder |
 | device | `iPhone16,1`, iOS 18.2 |  |
 | appVersions, protocolVersion, featureSchemaVersion |  | Reject mixing schema versions in training |
@@ -245,11 +267,11 @@ A SwiftUI window that runs blocks of prompts. Each block has a speech style and 
 
 | Block | Prompts | Takes | Purpose |
 | --- | --- | --- | --- |
-| Sync check | "pa pa pa pa pa" aloud | 1 per Recorder launch | Measures face/audio offset |
-| Aloud sentences | Harvard sentences (720, public domain), shuffled | 50 per sitting | Future Tier 2 + labels via Whisper |
-| Silent sentences | Same sentences, mouthed | 50 per sitting | Silent↔aloud domain shift |
-| Commands | User's command list (Step 3) | 10 silent + 3 aloud each | Command model |
-| Negatives | "Talk normally about anything", "chew", "smile", "yawn", "stay still" | 10 s each | Rejection class |
+| Sync check | "pa pa pa pa pa" aloud | 1 per Recorder launch | Measures face/audio/video offset |
+| Aloud sentences | Harvard + everyday prompts (`ml/prompts/`), shuffled | 50 per sitting | Step 3 fine-tuning |
+| Silent sentences | The same prompts, mouthed | 50 per sitting | Step 3 fine-tuning (the real task) |
+| Test set | 100 everyday prompts, silent | Once, in its own sitting | Held-out score; never trained on |
+| Neutral | "Stay still" | 3 × 10 s per sitting | Neutral face + `MouthActivity` threshold |
 
 Flow per take: show the prompt large, then a 3-2-1 countdown → capture → the user presses Space to stop (or it stops on the prompt's time limit) → quality checks run → a review strip plays back. Keys: **Space** start/stop, **R** redo, **→** accept and next, **Delete** discard.
 
@@ -263,20 +285,27 @@ The review strip draws the audio waveform with `jawOpen` and `mouthClose` curves
 - Duration between 0.4 s and 2× the prompt's expected length.
 - Sync check: cross-correlate the audio energy envelope with `jawOpen` (both resampled to 100 Hz). Report the lag; pass if |lag| < 20 ms. Store the lag in every later manifest of that sitting as `measuredAvOffsetMs`.
 
+**Video checks:** mean crop luma below 60 (of 255) → flag `low_light`; fewer than 98% of expected mouth frames → `mouth_dropped`. The review strip also plays the mouth crops in sync with the audio.
+
 Flagged takes are saved with `quality.ok = false` and excluded by the Python loader by default.
 
-Flag names: `poor_tracking`, `no_speech`, `audible_in_silent`, `too_short`, `too_long`, `sync_offset`, `sync_failed`, `incomplete`. The checks live in `TacitKit/Features/TakeQuality.swift` and `SyncCheck.swift`.
+Flag names: `poor_tracking`, `no_speech`, `audible_in_silent`, `too_short`, `too_long`, `sync_offset`, `sync_failed`, `incomplete`, `low_light`, `mouth_dropped`. The checks live in `TacitKit/Features/TakeQuality.swift` and `SyncCheck.swift`.
 
 Recorder details settled in M3:
 
 - The Mac sends `start` as the last count of the 3-2-1 begins, so the camera is already running when the user starts. Each take therefore opens with about 0.3 s of lead-in. The duration check measures from the end of the countdown.
-- The silent sentence block repeats the aloud block's 50 sentences in a new order. Sentences with no accepted aloud take come first, so sittings work through all 720.
-- The Commands block runs in rounds: 10 silent rounds of the whole list, each shuffled, then 3 aloud rounds. Until Step 3 has a command list it uses the starter set.
+- The silent sentence block repeats the aloud block's 50 sentences in a new order. Sentences with no accepted aloud take come first, so sittings work through the whole prompt corpus.
 - Keys beyond the four above: **S** skips a prompt, and **Space** on the review strip replays the take.
+
+Recorder details settled in M3b:
+
+- Prompt lists live in `ml/prompts/` and are copied into the Mac app bundle. `harvard.txt` is there. `everyday.txt` (about 1,300 lines, reviewed by hand) and `test.txt` (100 lines) still need writing. Until `everyday.txt` exists the sentence blocks draw from Harvard only, and "New Test Set Sitting" has nothing to show until `test.txt` exists. Lines starting with `#` are comments. Prompt ids are the file name plus a 4-digit line number, for example `everyday-0012`.
+- Neutral takes are saved with `speechStyle` `negative`, so `iter_sessions(style="negative")` returns them with any other no-speech takes.
+- The sync check runs twice on the same take, once against `jawOpen` and once against mouth-crop openness (how dark the middle of the crop is). Both lags are shown, and either failing asks for a redo.
 
 ### Python loader (ml/silentml/data.py)
 
-`load_session(path) -> Session(face: np.ndarray[T, F], face_ts: np.ndarray[T], audio: np.ndarray[S], audio_t0: float, manifest: dict)` plus `iter_sessions(root, style=None, ok_only=True)`. A unit test in Swift writes a synthetic session and a pytest reads it back and checks every field, so the two sides can't drift.
+`load_session(path) -> Session(face: np.ndarray[T, F], face_ts: np.ndarray[T], audio: np.ndarray[S], audio_t0: float, manifest: dict, tracked: np.ndarray[T], path: Path, mouth: np.ndarray[N, 192, 192] | None, mouth_ts: np.ndarray[N] | None, mouth_landmarks: np.ndarray[N, 12, 2] | None)` plus `iter_sessions(root, style=None, ok_only=True)`. A unit test in Swift writes a synthetic session and a pytest reads it back and checks every field, so the two sides can't drift. `mouth.mp4` is decoded with PyAV, taking the Y plane and expanding video range back to 0 … 255 exactly as Swift does.
 
 ## Step 2 — Spoken and whisper mode
 
@@ -302,7 +331,7 @@ Whisper only hears audio from moments when your mouth is moving. This stops it i
 5. **Apply to audio:** trim the clip to the first and last open region, and zero any closed gap longer than 600 ms inside it. Don't cut and splice, so audio timestamps stay valid for the labelling job.
 6. **Decide:**
    - No open region at all → skip Whisper; HUD shows "Didn't catch that".
-   - Mouth active but energy VAD fires on < 20% of the open frames → you were mouthing silently; skip Whisper; HUD shows "No sound — use Command mode?".
+   - Mouth active but energy VAD fires on < 20% of the open frames → you were mouthing silently; skip Whisper; HUD shows "No sound — use Silent dictate?".
    - Otherwise send the gated audio to WhisperKit.
 7. **Fallback:** if the face is tracked in < 80% of the clip's frames (phone knocked, you looked away), bypass the gate, use the energy VAD alone, and log `gate_bypassed`.
 
@@ -334,70 +363,97 @@ Incremental transcription while the key is held is a v1.1 improvement. Design `D
 
 Measure: if the mouth gate is open and peak RMS before normalisation is under −30 dBFS, tag the session `speechStyle = whisper`. No separate mode or hotkey: the same hotkey handles both.
 
-### Auto-labelling job (feeds Step 3 and Tier 2)
+### Auto-labelling job (optional quality check for Step 3)
 
 A "Label sessions" button in Settings → Data runs WhisperKit with `wordTimestamps: true` over every `aloud` / `whisper` session lacking `transcript.json`. It writes `{ text, words: [{ w, start, end, p }], model, createdAt }`, with times relative to `firstAudioTs`. If `promptText` exists, also store the word error rate between the transcript and the prompt. Takes with WER > 0.3 get flagged so bad reads don't pollute training.
 
-## Step 3 — Silent command model
+## Step 3 — Silent dictation (video lip-reading)
 
-Step 3 recognises a silently mouthed command from face frames alone. A small encoder turns a take into a 128-d embedding; the command is the nearest enrolled prototype, or "none" if nothing is close enough. New commands need 5 takes and no retraining.
+Step 3 turns silently mouthed sentences into text. It fine-tunes a pretrained open-source lip-reading model (USR 2.0, with Auto-AVSR as the fallback) on mouth video of the user, then cleans its guesses with an on-device LLM. Face ID data is still recorded in every session but the v1 model doesn't use it; it's kept for a v2 low-light model.
 
-### Input features (identical in Swift and Python)
+### Why video, not Face ID data
 
-Implement once in Swift (`TacitKit/Features/FeatureExtractor.swift`) and once in Python (`silentml/features.py`), with a parity test on a fixture session: max abs difference < 1e-4.
+Pretrained lip-reading models read mouth video, and training from scratch needs hundreds of hours: Auto-AVSR scores 93% word error rate (WER) when trained on 23 h and 20.3% on 3,291 h. ARKit's 52 values also miss teeth and most tongue positions, which carry speech information; one 2025 study scored 66.4% WER from lip landmarks alone versus 17.3% from video. The trade-off: video needs light, so v1 doesn't work in the dark.
 
-1. **Resample** to a uniform 60 Hz grid by linear interpolation on `timestamp`. Untracked gaps ≤ 100 ms are interpolated; longer gaps are zero-filled and masked.
-2. **Blendshapes (29):** `jawOpen, jawForward, jawLeft, jawRight, mouthClose, mouthFunnel, mouthPucker, mouthLeft, mouthRight, mouthSmileLeft, mouthSmileRight, mouthFrownLeft, mouthFrownRight, mouthDimpleLeft, mouthDimpleRight, mouthStretchLeft, mouthStretchRight, mouthRollLower, mouthRollUpper, mouthShrugLower, mouthShrugUpper, mouthPressLeft, mouthPressRight, mouthLowerDownLeft, mouthLowerDownRight, mouthUpperUpLeft, mouthUpperUpRight, cheekPuff, tongueOut`.
-3. **Lip shape (192):** the 64 lip vertices, minus the user's neutral lip shape, divided by the neutral mouth width (corner-to-corner distance). Vertices are already in face-local space, so head pose is removed.
-4. **Velocity (221):** first difference of 2 + 3, times 60 (per-second units).
-5. **Normalise:** z-score each of the 442 dims with mean/std from the user's training data; store them in `normalizer.json` next to the model.
-6. **Crop:** mouth-activity score (MouthActivity, shared with Step 2's gate) = L2 norm of blendshape velocity, smoothed with a 100 ms moving average. Keep from the first to the last frame above threshold, plus 100 ms padding each side. Pad or centre-crop to **T = 120** frames (2 s), with a mask.
+### Pretrained models
 
-Model input: `features [1, 120, 442]` Float32 and `mask [1, 120]`.
+- **Primary: [USR 2.0](https://github.com/ahaliassos/usr2)** (ICLR 2026, MIT code). Released visual-speech checkpoints: Huge 17.6% WER, Large 21.5%, Base+ 24.8% (the repo's VSR column; it doesn't name the test set). Start with **Large**; try **Huge** if Phase A shows it's clearly better and its latency fits. Its own preprocessing finds the mouth with MediaPipe face landmarks.
+- **Fallback: [Auto-AVSR](https://github.com/mpc001/auto_avsr)** (Apache 2.0 code). Checkpoint `vsr_trlrs2lrs3vox2avsp_base.pth` (visual-only, 250M params, 20.3% WER on LRS3). The most mature repo and docs; use it if USR 2.0 loses Phase A, won't fine-tune cleanly, or is too slow.
+- Vendor both as git submodules at `ml/third_party/usr2` and `ml/third_party/auto_avsr`, each pinned to one commit. `silentml` wraps them behind one interface (`load(name)`, `preprocess(session)`, `nbest(clip)`, `finetune(...)`), so the rest of the pipeline doesn't care which model runs.
+- Reuse each model's own preprocessing code for mouth alignment and cropping. Don't reimplement it: a crop that differs from what a model was trained on costs accuracy with no visible error. The two models may want different crops, which is why the iPhone sends a loose 192×192 crop and the final crop happens in Python.
+- **Licence:** both repos' code is permissive (MIT, Apache 2.0). The weights come from research datasets (LRS2, LRS3, VoxCeleb2, AVSpeech) with their own terms. Fine for personal use and a demo video; review before charging money.
 
-**Neutral face:** the mean of the "stay still" negative takes, saved as `neutral.json` per user. Re-capture it from the Commands window ("Recalibrate neutral", 3 s).
+### Model preprocessing (checked Nov 14, 2026)
 
-### Encoder
+USR 2.0 reuses Auto-AVSR's mouth cropping code, so both models expect the same input. Numbers come from [USR 2.0 `preprocessing/extract_mouths.py`](https://github.com/ahaliassos/usr2/blob/main/preprocessing/extract_mouths.py), its [`conf/data`](https://github.com/ahaliassos/usr2/tree/main/conf/data) configs, and Auto-AVSR's [`video_process.py`](https://github.com/mpc001/auto_avsr/blob/main/preparation/detectors/retinaface/video_process.py) and [`transforms.py`](https://github.com/mpc001/auto_avsr/blob/main/datamodule/transforms.py).
 
-| Layer | Shape out | Notes |
-| --- | --- | --- |
-| Linear 442 → 128 + LayerNorm | \[B, 120, 128\] |  |
-| 4 × residual temporal block | \[B, 120, 128\] | Depthwise conv k = 5, dilation 1/2/4/8 → pointwise 128 → GELU → LayerNorm, dropout 0.1 |
-| Masked attention pooling | \[B, 128\] | Learned query, softmax over valid frames |
-| Linear 128 → 128, L2-normalise | \[B, 128\] | The embedding |
+| Stage | Both models |
+| --- | --- |
+| Landmarks | 68-point iBUG layout per frame. Missing frames are interpolated, then smoothed over a 12-frame window |
+| Alignment | Affine warp to `20words_mean_face.npy` in a 256×256 frame, fitted on points 28, 33, 36, 39, 42, 45, 48, 54 (Auto-AVSR's MediaPipe path uses eye centres, nose tip and mouth centre instead) |
+| Crop | 96×96 around the mouth centre (mean of points 48–67) |
+| Model input | Centre crop 88×88 at test time, random 88×88 crop in training |
+| Pixels | Grayscale, divided by 255, then mean 0.421, std 0.165 |
+| Frame rate | 25 fps |
 
-About 0.3 M parameters. PyTorch 2.x in `silentml/model.py`.
+What this means for Tacit Type:
 
-### Training (offline, in ml/)
+- In the reference face the mouth is 45 px wide, so the 96 px crop spans about 2.1 mouth widths. The iPhone crop puts 64 px across the mouth (3 × mouth width in 192 px). That leaves enough resolution, plus room for the alignment rotation.
+- Don't run the models' MediaPipe or RetinaFace detectors on the iPhone crop. The eyes sit about 1.4 mouth widths above the mouth centre, right at the crop's edge, so detection would be unreliable. Instead, `silentml.preprocess` maps the `mouth.bin` landmarks onto the 68-point indices above and passes them in. Auto-AVSR's `AVSRDataLoader.load_data` already accepts precomputed landmarks.
+- ARKit mesh points don't sit exactly where the iBUG annotations do. Phase A's side-by-side crop check is how to catch a systematic shift. If one shows up, fit a fixed correction from the 12 ARKit points to the mean face once.
+- USR 2.0 decodes with beam 40 and CTC weight 0.1 by default. Phase C's beam of 10–20 trades accuracy for latency, so measure both in Phase A.
 
-**Stage A — word pretraining (uses Step 1 sentence data).** Cut aloud and silent sentence takes into word segments using the Whisper word timestamps from Step 2 (silent takes: align by prompt order with DTW against the aloud take of the same prompt). Train with supervised contrastive loss (temperature 0.1): segments of the same word are positives. This turns a few hours of sentences into thousands of labelled examples.
+| Set | Amount | Your time | Purpose |
+| --- | --- | --- | --- |
+| Aloud sentences | 1,000 prompts (\~1 h of speech) | \~3 h | Fine-tuning; easier target the model already knows |
+| Silent sentences | The same 1,000 prompts, mouthed | \~3 h | Fine-tuning on the real task |
+| Test set | 100 everyday prompts, silent, in their own sitting | \~20 min | Never trained on; the honest score |
+| Baseline | 50 aloud + 50 silent | \~30 min | Phase A go/no-go |
 
-**Stage B — command fine-tune.** Fine-tune on command takes (silent + aloud) with the same loss, plus negatives as their own "none" class. Weight silent takes 2×. Optimiser AdamW, lr 1e-3 (Stage A) / 3e-4 (Stage B), batch 64, early stop on validation accuracy.
+**Prompt corpus** (`ml/prompts/`): the 720 Harvard sentences plus \~1,300 everyday message-style sentences, 4–15 words each ("running ten minutes late", "sounds good, ship it"). Generate the everyday list once with an LLM, review it by hand, and commit it. Start with 1,000 prompts each way; grow to 2,000 if WER is still dropping.
 
-**Augmentation:** time-stretch 0.8–1.2×, shift ±100 ms, Gaussian noise σ = 0.05 (in z-space), random blendshape channel dropout p = 0.1, lip-vertex rotation ±3° about the face's forward axis.
+**Sittings:** 8–10 sittings of 30–40 minutes on different days, light and phone positions. Validation and test always hold out whole sittings.
 
-**Split:** hold out whole sittings (never takes from the same sitting in train and validation).
+**Labels:** the prompt text itself, normalised to the model's tokenizer (lowercase, punctuation stripped). No word timings needed. Drop takes the Step 1 quality checks flag; optionally drop aloud takes whose Whisper transcript is > 0.3 WER from the prompt (misreads).
 
-**CLI:** `python -m silentml.train --data <sessions dir> --stage a|b --out runs/<name>`, then `python -m silentml.export runs/<name>` → `CommandEncoder.mlpackage` (coremltools, ML Program, FP16, fixed input shapes) + `normalizer.json`. Export fails unless Core ML vs PyTorch embeddings have cosine > 0.999 on 50 validation takes.
+### Phase A — Zero-shot baseline (go/no-go)
 
-v1 training runs from the CLI by the developer. On-device training (for example with MLX Swift) is out of scope.
+1. Record the 50 + 50 baseline takes in one sitting.
+2. Run both pretrained models unmodified on them: USR 2.0 Large (and Huge if it fits in memory) and Auto-AVSR.
+3. For each, report WER and character error rate (CER) for aloud and silent separately, plus processing time per second of video on the Mac. Save 20 crops next to samples of that model's expected input.
+4. Pick the model with the lowest silent WER whose latency fits the 2.5 s target, and record the choice and numbers in `runs/baseline/metrics.json`. Ties go to USR 2.0.
 
-### Inference and rejection
+If silent WER is above \~90%, fix preprocessing (crop size, alignment, frame rate, brightness) before recording more data. A broken crop looks like a bad model.
 
-- **Prototypes:** for each command, mean embedding of its enrolled silent takes (min 5, recommended 10), re-normalised. The "none" prototypes are 5 k-means centroids of the negative takes.
-- **Decision:** cosine similarity to every prototype. Accept the top command only if (a) it is not a "none" centroid, (b) score ≥ τ (default 0.75, tuned per user), and (c) top − second ≥ 0.05. Otherwise the HUD shows "Not sure" with the top-2 guesses and runs nothing.
-- **Tuning τ:** on held-out takes, choose the lowest τ that keeps false accepts on negatives ≤ 2%. Save it in `commands.json`.
-- **Latency:** key up → action ≤ 300 ms after the tail (features + Core ML on CPU/Neural Engine should take < 20 ms).
+### Phase B — Fine-tune
 
-### Commands window
+- Start from the checkpoint; fine-tune the whole model with AdamW, lr 1e-4 with 500-step warm-up (start lower than the chosen repo's default because the dataset is tiny). Freeze the visual front-end for the first 2 epochs.
+- Sample silent takes 2× as often as aloud.
+- Augmentation: the chosen repo's defaults. Auto-AVSR's are a random 88×88 crop and time masking, with no horizontal flip. Check USR 2.0's training transforms when vendoring it, since its repo only shows the test pipeline.
+- Validation: 2 held-out sittings; early stop on **silent** validation WER.
+- Compute: one rented GPU with ≥ 40 GB memory (A100/H100 class). Estimated 1–3 h per run and a few dollars; measure on the first run. Training on the Mac is possible but slow and may not fit in memory.
+- CLI: `python -m silentml.finetune --data <sessions dir> --init <checkpoint> --out runs/<name>`; every run writes `config.json` and `metrics.json`.
 
-- Table of commands: phrase, action, takes enrolled, last score, a "Try it" button that shows live score bars for the top 3.
-- "Add command": type the phrase, pick an action, then mouth it 5–10 times (uses the Recorder flow).
-- **Confusable warning:** if two prototypes have cosine > 0.85, warn ("'next' and 'yes' look alike — pick a different phrase?").
-- **Action types:** keystroke (for example ⌘↩), type text, open app or URL, run a Shortcut by name (`/usr/bin/shortcuts run "<name>"`), AppleScript, built-in (start dictation, mute mic).
-- Stored in `Application Support/TacitType/commands.json`: `[{ id, phrase, action, prototype: [128], takeIds, createdAt }]` + `tau` + `modelVersion`.
+### Phase C — Decoding and LLM cleanup
 
-**Starter set (20)**, chosen for distinct mouth shapes: send, undo, copy, paste, next, back, scroll up, scroll down, new tab, close tab, play, pause, mute, volume up, volume down, screenshot, yes, no, dictate, lock.
+1. The model's beam search (beam 10–20) returns the top 5 hypotheses with scores.
+2. The on-device LLM (Apple `FoundationModels`, macOS 26+) gets the 5 guesses, the name of the focused app, and a note that p/b/m, f/v and t/d/n look identical on the lips. It returns the most likely sentence.
+3. 800 ms timeout; on timeout or without macOS 26, use the top hypothesis. No cloud LLM in v1.
+
+### Running it on the Mac (v1)
+
+- **Python sidecar** `python -m silentml.serve`: loads the model once on Apple's GPU (MPS), listens on a Unix socket in `Application Support/TacitType`, and returns the n-best list as JSON for a given session. The Mac app's `ModelSidecar` starts it with `Process`, health-checks it, and restarts it on crash. This makes v1 developer-only (it needs a Python environment); a Core ML or MLX port is v2.
+- `SilentDictationPipeline`: trim the clip with `MouthActivity` (Step 2's gate), preprocess, call the sidecar, run LLM cleanup, insert with `TextInserter`.
+- If the mouth gate is open and the audio is clearly voiced (energy VAD on > 50% of open frames), the user spoke out loud: route the clip to `DictationPipeline` instead.
+- Latency target: release → text ≤ 2.5 s for a 5 s utterance. Measure it in Phase A; optimise later (smaller checkpoint, Core ML, int8).
+
+### Face ID data (kept for v2)
+
+Every session keeps `face.bin`. v1 uses it only for `MouthActivity`. Planned v2: feed the ARKit values to the model as a second input for low light and jaw/lip-rounding cues, and evaluate ARKit's raw depth map (`capturedDepthData`, which arrives at a lower rate than video).
+
+### Metrics
+
+Per run: WER and CER for aloud and silent, per held-out sitting. On the 100-prompt test set, also score "correct in meaning after LLM cleanup" by hand (yes/no). Track every run in `runs/<name>/metrics.json` so the effect of more data is visible.
 
 ## Milestones and acceptance criteria
 
@@ -427,6 +483,13 @@ Build in this order; each milestone ends with its checks passing. Hand Claude Co
 - [ ] Sync check reports |lag| < 20 ms on 5 consecutive runs
 - [ ] Recorder runs all five blocks with keyboard-only flow and quality flags
 
+**M3b — Mouth video** (added after M3 for Step 3)
+
+- [ ] iPhone sends 192×192 grayscale mouth crops at 25 fps with landmarks; < 2% dropped; face frames still ≥ 58 fps
+- [ ] Sessions include `mouth.mp4` + `mouth.bin`; the Python loader returns mouth frames aligned with face and audio timestamps
+- [ ] Sync check shows video within 20 ms of audio (measured from `mouth.bin` timestamps, so it is finer than one 40 ms frame)
+- [ ] Recorder plays mouth crops in sync; `low_light` flag fires in a dim room
+
 **M4 — Dictation** (Step 2)
 
 - [ ] Hold hotkey, whisper a sentence, release: text appears in TextEdit, Notes, Slack, VS Code and Chrome
@@ -436,34 +499,39 @@ Build in this order; each milestone ends with its checks passing. Hand Claude Co
 - [ ] Mouth gate: holding the hotkey with your mouth closed while someone talks next to you inserts nothing, 10 of 10 tries
 - [ ] Mouth gate doesn't hurt accuracy: on 20 recorded test takes (aloud + whisper), word error rate with the gate is no more than 1 point worse than without it
 
-**M5 — Silent commands** (Step 3)
+**M5 — Silent dictation** (Step 3)
 
-- [ ] Feature parity test Swift↔Python passes
-- [ ] Stage A + B trained on ≥ 1 h of the developer's sentences and 20 commands × 13 takes
-- [ ] Held-out top-1 ≥ 95%, false accepts on negatives ≤ 2%
-- [ ] Key up → action ≤ 300 ms after the tail
-- [ ] Adding a new command with 5 takes works without retraining
+- [ ] Phase A: USR 2.0 and Auto-AVSR WER, CER and latency on 50 aloud + 50 silent takes recorded in `runs/baseline/metrics.json`
+- [ ] Mouth crops checked side by side against the model's expected input
+- [ ] ≥ 1,000 aloud + 1,000 silent sentence takes across ≥ 8 sittings, plus the 100-prompt test set
+- [ ] Fine-tuned model beats the baseline's silent WER on 2 held-out sittings
+- [ ] Python sidecar starts with the Mac app and survives a crash/restart
+- [ ] Hold ⌃⌥S, mouth a sentence, release: text appears in the focused app ≤ 2.5 s later
+- [ ] Test set: ≥ 7 of 10 everyday phrases correct in meaning after LLM cleanup
 
 **M6 — Demo-ready**
 
-- [ ] Onboarding: permissions, pairing, Shortcuts automation, neutral calibration, 5-minute starter enrolment
-- [ ] Lights-off demo: 10 silent commands in a row in a dark room, all correct
+- [ ] Onboarding: permissions, pairing, Shortcuts automation, neutral calibration, sidecar setup check
+- [ ] Demo: in normal room light, silently dictate 5 everyday messages into Slack; at least 4 land correct in meaning
 
 ## Risks and open questions
 
 | Risk | Impact | Mitigation |
 | --- | --- | --- |
-| Silent mouthing differs from aloud speech | Stage A pretraining transfers poorly | Silent takes in every block, 2× weight in Stage B; measure silent-only accuracy separately |
+| Silent mouthing differs from aloud speech | The pretrained model (trained on aloud video) does worse on silent takes | Silent takes sampled 2×; silent WER tracked separately; LLM cleanup |
+| Preprocessing differs from the pretrained model's | Large accuracy loss with no visible error | Reuse each model's own preprocessing code; side-by-side crop check in M5 |
+| Low light | Video model fails | `low_light` flag + HUD warning; Face ID fusion in v2 |
+| Too little personal data to move WER | Fine-tuning plateaus | Grow the corpus to 2,000 each way; freeze more layers; LLM cleanup carries short phrases |
+| Pretrained weights' licence | v1 can't be sold as-is | Personal and demo use only until the dataset terms are reviewed or a model is retrained |
+| Python sidecar | Not shippable to normal users | Fine for v1; Core ML or MLX port in v2 |
 | The iPhone app must be in the foreground | Feels less seamless than Continuity Camera | Dock mode + Shortcuts automation on charger; clear "Open Tacit Type" HUD message |
-| ARKit face-mesh topology change in a future iOS | Lip indices silently wrong | Check `ARFaceGeometry.vertexCount == 1220` at launch; refuse to capture and log if not |
-| Command confusables (similar mouth shapes) | Wrong action runs | Margin rule, confusable warning at enrolment, "Not sure" instead of guessing |
 | AX insertion fails in some apps | Text doesn't appear | Paste fallback + per-app override list |
-| Thermal throttling during long sessions | Frame drops | Report in `status`; push-to-talk keeps sessions short |
+| Thermal throttling (camera + charging + JPEG encoding) | Frame drops | Cooled MagSafe stand; thermal state in `status`; push-to-talk keeps sessions short |
 | Privacy: camera + mic stream | Trust | Camera only on during capture, TLS, all local, sessions saved only when the user opts in |
 
 **Open questions**
 
 - Name is **Tacit Type** for both apps. Before any public demo, secure the domain, the App Store name and the X/GitHub handle.
-- Should Command mode also accept a whispered command and route it through Whisper when the face model is "Not sure"?
-- Minimum iPhone model to support: confirm 60 fps face tracking on the oldest TrueDepth device you own.
+- Licence terms of the pretrained weights, if Tacit Type is ever sold.
+- Minimum iPhone model: confirm 60 fps face tracking plus mouth cropping on the oldest TrueDepth device you own.
 - Exact WhisperKit model ids and sizes: verify against its model repo when M4 starts.

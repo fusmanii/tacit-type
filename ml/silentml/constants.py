@@ -40,3 +40,32 @@ FACE_FILE_HEADER_DTYPE = np.dtype([
     ("reserved", "<u4"),
 ])
 FACE_FILE_MAGIC = b"SFCE"
+
+# Mouth video (Step 3). Crops are square grayscale, MOUTH_CROP_SIZE pixels a side, at MOUTH_FPS.
+MOUTH_CROP_SIZE = 192
+MOUTH_FPS = 25
+MOUTH_FILE_VERSION = 1
+
+# Crop landmark slots, in mouth.bin order. Mirrors `enum CropLandmark` in Constants.swift.
+# "low_x" and "high_x" are face-local x, so low_x is the subject's right side.
+CROP_LANDMARK_ORDER: tuple[str, ...] = (
+    "eyeOuterLowX", "eyeInnerLowX", "eyeInnerHighX", "eyeOuterHighX",
+    "noseBridge", "noseTip", "noseBase",
+    "mouthCornerLowX", "mouthCornerHighX", "upperLipCentre", "lowerLipCentre",
+    "chin",
+)
+CROP_LANDMARK_COUNT = len(CROP_LANDMARK_ORDER)
+
+# mouth.bin header: magic "SMTH", version, landmark count, frame count.
+MOUTH_FILE_HEADER_DTYPE = np.dtype([
+    ("magic", "S4"),
+    ("version", "<u2"),
+    ("landmark_count", "<u2"),
+    ("frame_count", "<u4"),
+])
+MOUTH_FILE_MAGIC = b"SMTH"
+
+
+def mouth_record_dtype(landmark_count: int = CROP_LANDMARK_COUNT) -> np.dtype:
+    """One mouth.bin record: capture time, then landmark_count (x, y) points in crop pixels."""
+    return np.dtype([("timestamp", "<f8"), ("landmarks", "<f4", (landmark_count, 2))])

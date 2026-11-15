@@ -250,7 +250,7 @@ final class DeviceManager {
             consecutiveTimeouts = 0
             Self.log.notice("Connected to \(hello.deviceName, privacy: .public) (\(hello.deviceModel, privacy: .public), app \(hello.appVersion, privacy: .public))")
             startClockSync(on: link)
-        case .faceBatch, .audioChunk:
+        case .faceBatch, .audioChunk, .mouthBatch:
             captureReceiver?.receive(message)
         case let .status(status):
             lastStatus = status

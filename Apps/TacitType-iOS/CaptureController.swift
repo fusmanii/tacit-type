@@ -11,6 +11,8 @@ final class CaptureController: NSObject, ARSessionDelegate, @unchecked Sendable 
     struct Tracking: Equatable, Sendable {
         var state: DeviceStatus.TrackingState = .notAvailable
         var faceDetected = false
+        /// Mean luma of the mouth crops, rounded to 10 so status only goes out when it really changes.
+        var meanLuma: Float?
     }
 
     enum StartError: Error, CustomStringConvertible {
@@ -36,10 +38,16 @@ final class CaptureController: NSObject, ARSessionDelegate, @unchecked Sendable 
         var startedAt: Double
         var firstFrameLogged = false
         var frameCount = 0
+        var wantsMouth = false
+        var mouthCount = 0
+        var mouthSeconds = 0.0
+        var mouthMaxSeconds = 0.0
     }
 
     private var active: Active?
     private var batcher = FaceBatcher()
+    private var mouthBatcher = MouthBatcher()
+    private var sampler = MouthFrameSampler()
     private var resampler = AudioResampler()
     private var tracking = Tracking()
     private var meshChecked = false
@@ -58,8 +66,10 @@ final class CaptureController: NSObject, ARSessionDelegate, @unchecked Sendable 
         guard Self.isSupported else { throw StartError.unsupported }
         let startedAt = HostClock.now()
         queue.sync {
-            active = Active(sessionId: sessionId, link: link, startedAt: startedAt)
+            active = Active(sessionId: sessionId, link: link, startedAt: startedAt, wantsMouth: streams.contains(.mouth))
             batcher = FaceBatcher()
+            mouthBatcher = MouthBatcher()
+            sampler = MouthFrameSampler()
             resampler.reset()
             tracking = Tracking()
             meshChecked = false
@@ -94,8 +104,13 @@ final class CaptureController: NSObject, ARSessionDelegate, @unchecked Sendable 
     private func finish() {
         guard let active else { return }
         if let batch = batcher.flush() { active.link.send(.faceBatch(batch)) }
+        if let batch = mouthBatcher.flush() { active.link.send(.mouthBatch(batch)) }
         let elapsed = HostClock.now() - active.startedAt
         Self.log.info("Capture \(active.sessionId, privacy: .public) stopped after \(elapsed, format: .fixed(precision: 2)) s, \(active.frameCount) frames")
+        if active.mouthCount > 0 {
+            let mean = active.mouthSeconds / Double(active.mouthCount) * 1000
+            Self.log.info("Mouth crops: \(active.mouthCount) frames, \(mean, format: .fixed(precision: 1)) ms mean, \(active.mouthMaxSeconds * 1000, format: .fixed(precision: 1)) ms max on the capture queue")
+        }
         self.active = nil
     }
 
@@ -121,11 +136,24 @@ final class CaptureController: NSObject, ARSessionDelegate, @unchecked Sendable 
             Self.log.info("First face frame \(latency, format: .fixed(precision: 0)) ms after start")
         }
         active.frameCount += 1
-        self.active = active
         if let batch = batcher.append(faceFrame) { active.link.send(.faceBatch(batch)) }
 
+        var luma = tracking.meanLuma
+        if active.wantsMouth, sampler.shouldKeep(frame.timestamp), let anchor, anchor.isTracked {
+            let began = HostClock.now()
+            if let mouth = Self.makeMouthFrame(frame, anchor: anchor) {
+                luma = (mouth.luma / 10).rounded() * 10
+                if let batch = mouthBatcher.append(mouth.frame) { active.link.send(.mouthBatch(batch)) }
+            }
+            let spent = HostClock.now() - began
+            active.mouthCount += 1
+            active.mouthSeconds += spent
+            active.mouthMaxSeconds = max(active.mouthMaxSeconds, spent)
+        }
+        self.active = active
+
         let now = Tracking(state: Self.trackingState(frame.camera.trackingState),
-                           faceDetected: faceFrame.trackingFlags.contains(.isTracked))
+                           faceDetected: faceFrame.trackingFlags.contains(.isTracked), meanLuma: luma)
         if now != tracking {
             tracking = now
             Task { @MainActor in self.onTrackingChange?(now) }
@@ -172,6 +200,48 @@ final class CaptureController: NSObject, ARSessionDelegate, @unchecked Sendable 
 
         return FaceFrame(timestamp: frame.timestamp, trackingFlags: flags, blendShapes: blendShapes,
                          headTransform: headTransform, lipVertices: lipVertices)
+    }
+
+    /// Vertices projected for the crop. Hardcoded once reviewed; until then picked from ARKit's neutral
+    /// face, which is the same on every device.
+    static let cropLandmarkIndices: [Int] = {
+        if !Constants.cropLandmarkIndices.isEmpty { return Constants.cropLandmarkIndices }
+        guard let neutral = ARFaceGeometry(blendShapes: [:]) else { return [] }
+        do {
+            return try CropLandmarkSelector.select(vertices: neutral.vertices, triangleIndices: neutral.triangleIndices.map(Int.init),
+                                                   mouthCorners: CropLandmarkSelector.lipCorners)
+        } catch {
+            log.fault("Couldn't pick crop landmarks: \(String(describing: error), privacy: .public)")
+            return []
+        }
+    }()
+
+    /// Projects the crop landmarks into the camera image, cuts the mouth out of the luma plane and
+    /// JPEG-encodes it. Runs on the capture queue.
+    private static func makeMouthFrame(_ frame: ARFrame, anchor: ARFaceAnchor) -> (frame: MouthFrame, luma: Float)? {
+        let indices = cropLandmarkIndices
+        guard indices.count == Constants.cropLandmarkCount else { return nil }
+        let camera = frame.camera
+        let viewport = CGSize(width: camera.imageResolution.width, height: camera.imageResolution.height)
+        let vertices = anchor.geometry.vertices
+        let imagePoints = indices.map { index -> SIMD2<Float> in
+            let world = anchor.transform * SIMD4(vertices[index], 1)
+            // capturedImage is in the sensor's landscape-right orientation, so this lands in its pixels.
+            let point = camera.projectPoint(SIMD3(world.x, world.y, world.z), orientation: .landscapeRight, viewportSize: viewport)
+            return SIMD2(Float(point.x), Float(point.y))
+        }
+        guard let crop = MouthCrop(landmarks: imagePoints) else { return nil }
+
+        let buffer = frame.capturedImage
+        CVPixelBufferLockBaseAddress(buffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+        guard CVPixelBufferGetPlaneCount(buffer) >= 1, let base = CVPixelBufferGetBaseAddressOfPlane(buffer, 0) else { return nil }
+        let pixels = crop.extract(from: base, width: CVPixelBufferGetWidthOfPlane(buffer, 0),
+                                  height: CVPixelBufferGetHeightOfPlane(buffer, 0),
+                                  bytesPerRow: CVPixelBufferGetBytesPerRowOfPlane(buffer, 0))
+        guard let jpeg = try? MouthJPEG.encode(pixels) else { return nil }
+        let landmarks = imagePoints.map(crop.cropPoint)
+        return (MouthFrame(timestamp: frame.timestamp, landmarks: landmarks, jpeg: jpeg), MouthPixels.meanLuma(pixels))
     }
 
     private static func trackingState(_ state: ARCamera.TrackingState) -> DeviceStatus.TrackingState {

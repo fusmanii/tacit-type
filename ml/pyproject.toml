@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "silentml"
 version = "0.1.0"
-description = "Dataset loading, training and Core ML export for Tacit Type silent commands"
+description = "Dataset loading and lip-reading fine-tuning for Tacit Type silent dictation"
 requires-python = ">=3.11"
-dependencies = ["numpy>=1.26"]
+dependencies = ["numpy>=1.26", "av>=12"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
-# Needed from M5. torch and coremltools may lag the newest Python release.
-train = ["torch>=2.3", "coremltools>=8"]
+# Needed from M5 for fine-tuning and the sidecar. torch may lag the newest Python release.
+train = ["torch>=2.3"]
 
 [tool.setuptools]
 packages = ["silentml"]

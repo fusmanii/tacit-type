@@ -51,4 +51,42 @@ public enum Constants {
     ]
 
     public static let blendShapeCount = 52
+
+    // MARK: Mouth video (M3b)
+
+    /// Side of the square grayscale mouth crop the iPhone sends, pixels.
+    public static let mouthCropSize = 192
+    /// Both lip-reading models were trained on 25 fps video.
+    public static let mouthFps: Double = 25
+    public static let mouthBatchInterval: TimeInterval = 0.2
+    /// The crop square's side as a multiple of the mouth width (corner to corner).
+    public static let mouthCropScale: Float = 3
+    public static let mouthJPEGQuality = 0.85
+    /// Version of the `mouth.bin` layout. Bump on any change.
+    public static let mouthFileVersion: UInt16 = 1
+
+    /// Face-mesh vertices projected into the camera image each mouth frame, in `CropLandmark` slot order.
+    /// Chosen by `CropLandmarkSelector` on ARKit's neutral face and reviewed with `LipVertexPickerView`.
+    /// Mouth corners are fixed to `lipVertexIndices` slots 0 and 1.
+    /// Picked on 2026-11-15 and reviewed on the live mesh. Never change after mouth data exists
+    /// without bumping `mouthFileVersion`, since `mouth.bin` landmarks mean these vertices.
+    /// Slots: eyeOuterLowX, eyeInnerLowX, eyeInnerHighX, eyeOuterHighX, noseBridge, noseTip, noseBase,
+    /// mouthCornerLowX, mouthCornerHighX, upperLipCentre, lowerLipCentre, chin
+    public static let cropLandmarkIndices: [Int] = [
+        1101, 1089, 1081, 1069, 12, 8, 256, 249, 684, 691, 25, 1047,
+    ]
+
+    public static var cropLandmarkCount: Int { CropLandmark.allCases.count }
+}
+
+/// The 12 crop landmark slots, in wire and `mouth.bin` order.
+///
+/// "Low x" and "high x" are face-local x, as in `LipVertexSelector` (slot 0 there is the low-x corner).
+/// Between them they cover the 68-point iBUG positions the lip-reading models align with:
+/// eye corners 36, 39, 42, 45, nose 28, 30, 33, mouth corners 48 and 54, and the mouth centre.
+public enum CropLandmark: Int, CaseIterable, Sendable {
+    case eyeOuterLowX, eyeInnerLowX, eyeInnerHighX, eyeOuterHighX
+    case noseBridge, noseTip, noseBase
+    case mouthCornerLowX, mouthCornerHighX, upperLipCentre, lowerLipCentre
+    case chin
 }

@@ -54,6 +54,10 @@ public enum TakeQuality {
         case syncFailed = "sync_failed"
         /// The capture ended early or its last batch may be missing.
         case incomplete
+        /// Mouth crops are too dark for the lip-reading model.
+        case lowLight = "low_light"
+        /// Fewer than 98% of the expected mouth frames arrived.
+        case mouthDropped = "mouth_dropped"
     }
 
     public static let minTrackedRatio = 0.95
@@ -62,12 +66,16 @@ public enum TakeQuality {
     public static let minSpeech = 0.2
     public static let silentCeilingDb = -40.0
     public static let silentAllowance = 0.3
+    /// Mean crop luma, of 255.
+    public static let lowLightLuma = 60.0
+    public static let minMouthReceived = 0.98
 
     /// - Parameters:
     ///   - duration: Seconds the user performed the prompt for, without any lead-in.
     ///   - expectedDuration: The prompt's expected length. Nil skips the upper bound.
+    ///   - expectsMouth: The session asked for mouth video, so the video checks apply.
     public static func flags(metrics: CaptureMetrics, audio: [Int16], style: SpeechStyle,
-                             duration: Double, expectedDuration: Double?) -> [Flag] {
+                             duration: Double, expectedDuration: Double?, expectsMouth: Bool = false) -> [Flag] {
         var flags: [Flag] = []
         if metrics.trackedRatio < minTrackedRatio || metrics.measuredFps < minFps {
             flags.append(.poorTracking)
@@ -84,6 +92,10 @@ public enum TakeQuality {
             flags.append(.tooShort)
         } else if let expectedDuration, duration > 2 * expectedDuration {
             flags.append(.tooLong)
+        }
+        if expectsMouth {
+            if let luma = metrics.meanLuma, luma < lowLightLuma { flags.append(.lowLight) }
+            if metrics.mouthFrameCount == 0 || metrics.mouthReceivedRatio < minMouthReceived { flags.append(.mouthDropped) }
         }
         return flags
     }
