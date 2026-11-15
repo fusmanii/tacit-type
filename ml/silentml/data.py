@@ -1,7 +1,7 @@
 """Session loader for the on-disk format written by Tacit Type's SessionStore.
 
 A session folder holds manifest.json, face.bin and audio.wav, plus mouth.mp4 and mouth.bin when
-the iPhone sent mouth video. The Swift side is
+the iPhone sent mouth video, and transcript.json once the label job or live dictation wrote one. The Swift side is
 Packages/TacitKit/Sources/TacitKit/Model/SessionStore.swift. tests/test_data.py reads a fixture
 that the Swift tests keep current, so the two sides can't drift.
 """
@@ -55,6 +55,9 @@ class Session:
     mouth: np.ndarray | None = None  # [N, 192, 192] uint8 grayscale crops, 0 ... 255
     mouth_ts: np.ndarray | None = None  # [N] float64, same clock as face_ts
     mouth_landmarks: np.ndarray | None = None  # [N, 12, 2] float32, crop pixels, CROP_LANDMARK_ORDER
+    # transcript.json: {text, words: [{w, start, end, p}], model, createdAt, wer?}. Word times are
+    # seconds from audio_t0. words is empty for live dictation. wer is against promptText.
+    transcript: dict | None = None
 
 
 def read_face_file(path: Path) -> np.ndarray:
@@ -142,6 +145,8 @@ def load_session(path: Path | str) -> Session:
             raise SessionFormatError(f"{path}: mouth.mp4 has {len(mouth)} frames, mouth.bin has {len(records)}")
         mouth_ts = records["timestamp"].copy()
         mouth_landmarks = records["landmarks"].copy()
+    transcript_path = path / "transcript.json"
+    transcript = json.loads(transcript_path.read_text()) if transcript_path.exists() else None
     return Session(
         face=face,
         face_ts=frames["timestamp"].copy(),
@@ -153,6 +158,7 @@ def load_session(path: Path | str) -> Session:
         mouth=mouth,
         mouth_ts=mouth_ts,
         mouth_landmarks=mouth_landmarks,
+        transcript=transcript,
     )
 
 
@@ -160,7 +166,7 @@ def iter_sessions(root: Path | str, style: str | None = None, ok_only: bool = Tr
     """Yields the sessions under root (<root>/<day>/<sessionId>/), in path order.
 
     style keeps one speechStyle (aloud, whisper, silent or negative).
-    ok_only skips takes the Recorder flagged (quality.ok is false).
+    ok_only skips takes the Recorder or the label job flagged (quality.ok is false).
     """
     for manifest_path in sorted(Path(root).glob("*/*/manifest.json")):
         manifest = json.loads(manifest_path.read_text())

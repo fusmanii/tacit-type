@@ -1,7 +1,7 @@
 DERIVED := build/DerivedData
 XCB := xcodebuild -workspace TacitType.xcworkspace -derivedDataPath $(DERIVED) CODE_SIGNING_ALLOWED=NO
 
-.PHONY: generate open run run-ios build build-mac build-ios test test-swift test-python ml-env clean
+.PHONY: generate open run run-signed run-ios build build-mac build-ios test test-swift test-python ml-env clean
 
 generate:
 	xcodegen generate --use-cache
@@ -13,6 +13,15 @@ open: generate
 run: generate
 	$(XCB) -scheme TacitType-macOS -configuration Debug -destination 'platform=macOS,arch=arm64' \
 		CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= build
+	-pkill -x TacitType
+	open $(DERIVED)/Build/Products/Debug/TacitType.app
+
+# Debug build signed with your team from Config/Signing.local.xcconfig. macOS ties the Accessibility
+# grant to the signature, so dictation keeps its permission across rebuilds. `make run` signs ad hoc,
+# which makes macOS forget the grant every build.
+run-signed: generate
+	$(XCB) -scheme TacitType-macOS -configuration Debug -destination 'platform=macOS,arch=arm64' \
+		CODE_SIGNING_ALLOWED=YES -allowProvisioningUpdates build
 	-pkill -x TacitType
 	open $(DERIVED)/Build/Products/Debug/TacitType.app
 

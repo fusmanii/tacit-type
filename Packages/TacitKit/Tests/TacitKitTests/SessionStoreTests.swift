@@ -48,8 +48,17 @@ enum SessionFixture {
             mouthFrameCount: 5, mouthFps: 25, meanLuma: 111.5,
             quality: .init(ok: true)
         )
-        return StoredSession(manifest: manifest, frames: frames, audio: audio(count: 3_200), mouth: mouth)
+        return StoredSession(manifest: manifest, frames: frames, audio: audio(count: 3_200), mouth: mouth,
+                             transcript: transcript)
     }
+
+    static let transcript = Transcript(
+        text: "The birch canoe slid on the smooth planks.",
+        words: [.init(w: "The", start: 0.32, end: 0.41, p: 0.98), .init(w: " birch", start: 0.41, end: 0.7, p: 0.875)],
+        model: "openai_whisper-small.en",
+        createdAt: Date(timeIntervalSince1970: 1_793_836_900), // 2026-11-05T00:01:40Z
+        wer: 0.125
+    )
 
     static let mouthT0 = 81_234.52
 
@@ -139,6 +148,15 @@ struct SessionStoreTests {
         }
         #expect(store.sessionFolders().count == 2)
         #expect(store.manifests() == SessionFixture.all.map(\.manifest))
+
+        let silent = store.folder(for: SessionFixture.flaggedSilent.manifest)
+        #expect(try store.readTranscript(at: silent) == nil)
+        var relabelled = SessionFixture.flaggedSilent.manifest
+        relabelled.quality = .init(ok: false, flags: ["transcript_mismatch"])
+        try store.writeManifest(relabelled, at: silent)
+        try store.writeTranscript(SessionFixture.transcript, at: silent)
+        #expect(try store.readManifest(at: silent) == relabelled)
+        #expect(try store.read(at: silent).transcript == SessionFixture.transcript)
         #expect(store.diskUsage() > 12 * 1_052)
         try store.deleteAll()
         #expect(store.sessionFolders().isEmpty)
@@ -161,6 +179,8 @@ struct SessionStoreTests {
             // JSON formatting can differ between Foundation versions, so the manifest is compared by value.
             #expect(try SessionStore(root: SessionFixture.root).readManifest(at: committed) == session.manifest,
                     "manifest.json in ml/tests/fixtures is stale")
+            #expect(try SessionStore(root: SessionFixture.root).readTranscript(at: committed) == session.transcript,
+                    "transcript.json in ml/tests/fixtures is stale")
             let names = [SessionStore.faceName, SessionStore.audioName] + (session.mouth.isEmpty ? [] : [SessionStore.mouthName])
             for name in names {
                 let expected = try Data(contentsOf: written.appending(path: name))
@@ -302,17 +322,20 @@ struct RecorderPromptTests {
         #expect(parsed.map(\.text) == ["running ten minutes late", "sounds good, ship it"])
     }
 
-    @Test func trainingSittingHasItsFourBlocks() {
+    @Test func trainingSittingHasItsFiveBlocks() {
         var generator = SystemRandomNumberGenerator()
         let blocks = RecorderPrompts.sitting(sentences: sentences, using: &generator)
-        #expect(blocks.map(\.kind) == [.syncCheck, .aloudSentences, .silentSentences, .neutral])
-        #expect(blocks.map(\.prompts.count) == [1, 50, 50, 3])
+        #expect(blocks.map(\.kind) == [.syncCheck, .aloudSentences, .whisperSentences, .silentSentences, .neutral])
+        #expect(blocks.map(\.prompts.count) == [1, 50, 10, 50, 3])
 
+        let aloud = Set(blocks[1].prompts.map(\.promptId))
         #expect(blocks[1].prompts.allSatisfy { $0.style == .aloud })
-        #expect(blocks[2].prompts.allSatisfy { $0.style == .silent })
-        #expect(Set(blocks[1].prompts.map(\.promptId)) == Set(blocks[2].prompts.map(\.promptId)))
-        #expect(Set(blocks[1].prompts.map(\.promptId)).count == 50)
-        #expect(blocks[3].prompts.allSatisfy { $0.style == .negative && $0.timeLimit == 10 && $0.promptId == "neutral-still" })
+        #expect(blocks[2].prompts.allSatisfy { $0.style == .whisper })
+        #expect(Set(blocks[2].prompts.map(\.promptId)).isSubset(of: aloud))
+        #expect(blocks[3].prompts.allSatisfy { $0.style == .silent })
+        #expect(aloud == Set(blocks[3].prompts.map(\.promptId)))
+        #expect(aloud.count == 50)
+        #expect(blocks[4].prompts.allSatisfy { $0.style == .negative && $0.timeLimit == 10 && $0.promptId == "neutral-still" })
     }
 
     @Test func testSittingIsSilentAndComplete() {

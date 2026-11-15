@@ -22,7 +22,7 @@ public struct RecorderPrompt: Sendable, Equatable {
 
 public struct RecorderBlock: Sendable, Equatable, Identifiable {
     public enum Kind: String, Sendable, CaseIterable {
-        case syncCheck, aloudSentences, silentSentences, testSet, neutral
+        case syncCheck, aloudSentences, whisperSentences, silentSentences, testSet, neutral
     }
 
     public var kind: Kind
@@ -34,6 +34,7 @@ public struct RecorderBlock: Sendable, Equatable, Identifiable {
         switch kind {
         case .syncCheck: "Sync check"
         case .aloudSentences: "Aloud sentences"
+        case .whisperSentences: "Whisper sentences"
         case .silentSentences: "Silent sentences"
         case .testSet: "Test set"
         case .neutral: "Neutral"
@@ -45,6 +46,8 @@ public struct RecorderBlock: Sendable, Equatable, Identifiable {
 /// the neutral takes. The test set runs once, in a sitting of its own, so it can be held out whole.
 public enum RecorderPrompts {
     public static let sentencesPerSitting = 50
+    /// Whispered takes per sitting. They test dictation and the mouth gate (M4), not lip-reading.
+    public static let whisperPerSitting = 10
     public static let neutralTakes = 3
     public static let neutralDuration = 10.0
 
@@ -87,7 +90,7 @@ public enum RecorderPrompts {
     ///
     /// Sentences the user has not recorded yet come first, so sittings work through the whole corpus.
     /// The silent block repeats the aloud block's sentences in a new order, which gives every
-    /// silent take an aloud partner.
+    /// silent take an aloud partner. The whisper block whispers `whisperPerSitting` of them.
     public static func sitting(sentences: [(id: String, text: String)], alreadyRecorded: Set<String> = [],
                                using generator: inout some RandomNumberGenerator) -> [RecorderBlock] {
         let fresh = sentences.filter { !alreadyRecorded.contains($0.id) }.shuffled(using: &generator)
@@ -96,6 +99,8 @@ public enum RecorderPrompts {
         return [
             RecorderBlock(kind: .syncCheck, prompts: [syncCheck]),
             RecorderBlock(kind: .aloudSentences, prompts: sentencePrompts(.aloud, picked)),
+            RecorderBlock(kind: .whisperSentences,
+                          prompts: sentencePrompts(.whisper, Array(picked.shuffled(using: &generator).prefix(whisperPerSitting)))),
             RecorderBlock(kind: .silentSentences, prompts: sentencePrompts(.silent, picked.shuffled(using: &generator))),
             RecorderBlock(kind: .neutral, prompts: Array(repeating: neutral, count: neutralTakes)),
         ]

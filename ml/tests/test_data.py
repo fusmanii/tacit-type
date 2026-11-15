@@ -109,12 +109,23 @@ def test_aloud_session_every_field():
         "quality": {"ok": True, "flags": []},
     }
 
+    assert session.transcript == {
+        "text": "The birch canoe slid on the smooth planks.",
+        "words": [
+            {"w": "The", "start": 0.32, "end": 0.41, "p": 0.98},
+            {"w": " birch", "start": 0.41, "end": 0.7, "p": 0.875},
+        ],
+        "model": "openai_whisper-small.en",
+        "createdAt": "2026-11-05T00:01:40Z",
+        "wer": 0.125,
+    }
+
 
 def test_flagged_silent_session_leaves_optionals_out():
     session = load_session(SILENT)
     assert session.face.shape == (3, 260)
     assert session.tracked.all()
-    assert session.mouth is session.mouth_ts is session.mouth_landmarks is None
+    assert session.mouth is session.mouth_ts is session.mouth_landmarks is session.transcript is None
     np.testing.assert_array_equal(session.face[2], expected_frame(2))
     np.testing.assert_array_equal(session.audio, expected_audio(160))
     assert np.isnan(session.audio_t0)

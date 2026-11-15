@@ -414,6 +414,7 @@ private extension TakeQuality.Flag {
         case .incomplete: "The capture ended early. The end of the take may be missing."
         case .lowLight: "The mouth video is too dark. Add light in front of you."
         case .mouthDropped: "Some mouth video frames went missing."
+        case .transcriptMismatch: "Whisper's transcript doesn't match the prompt."
         }
     }
 }

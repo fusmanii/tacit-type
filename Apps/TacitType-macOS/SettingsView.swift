@@ -5,8 +5,8 @@ struct SettingsView: View {
     var body: some View {
         TabView {
             Tab("Devices", systemImage: "iphone") { DevicesSettingsView() }
-            Tab("Hotkeys", systemImage: "keyboard") { PlaceholderView(title: "Hotkeys", milestone: "M4") }
-            Tab("Dictation", systemImage: "waveform") { PlaceholderView(title: "Dictation", milestone: "M4") }
+            Tab("Hotkeys", systemImage: "keyboard") { HotkeysSettingsView() }
+            Tab("Dictation", systemImage: "waveform") { DictationSettingsView() }
             Tab("Silent Dictation", systemImage: "mouth") { PlaceholderView(title: "Silent Dictation", milestone: "M5") }
             Tab("Data", systemImage: "externaldrive") { DataSettingsView() }
             Tab("Diagnostics", systemImage: "stethoscope") { DiagnosticsView() }
@@ -20,6 +20,8 @@ private struct DiagnosticsView: View {
 
     var body: some View {
         Form {
+            DictationSection()
+            GateSection()
             CaptureSection()
             Section("Link") {
                 if let clock = devices.clockEstimate {
@@ -48,6 +50,80 @@ struct PlaceholderView: View {
     var body: some View {
         ContentUnavailableView(title, systemImage: "hammer", description: Text("Arrives in \(milestone)."))
             .frame(minWidth: 360, minHeight: 240)
+    }
+}
+
+private struct DictationSection: View {
+    @Environment(DictationController.self) private var dictation
+
+    var body: some View {
+        Section {
+            let stats = dictation.latency
+            if stats.count == 0 {
+                LabeledContent("Stop → inserted", value: "No dictations yet")
+            } else {
+                Check(label: "p50 stop → inserted < \(ms(DictationController.p50Budget))",
+                      value: "\(ms(stats.p50)) · n = \(stats.count)",
+                      passed: (stats.p50 ?? .infinity) < DictationController.p50Budget)
+                Check(label: "p95 stop → inserted < \(ms(DictationController.p95Budget))",
+                      value: ms(stats.p95), passed: (stats.p95 ?? .infinity) < DictationController.p95Budget)
+            }
+            if let last = dictation.lastBreakdown {
+                LabeledContent("Last dictation") {
+                    Text("tail + stop \(ms(last.tailAndStop)) · gate \(ms(last.gate)) · whisper \(ms(last.whisper)) · cleanup \(ms(last.cleanup)) · insert \(ms(last.insert)) (\(last.method.rawValue))")
+                        .monospacedDigit()
+                        .font(.caption)
+                        .multilineTextAlignment(.trailing)
+                }
+            }
+        } header: {
+            Text("Dictation")
+        } footer: {
+            Text("The M4 latency check expects small.en. Run it with the Fast model.")
+        }
+    }
+}
+
+private struct GateSection: View {
+    @Environment(GateCalibration.self) private var calibration
+    @Environment(GateEvaluation.self) private var evaluation
+    @Environment(RecorderModel.self) private var recorder
+
+    var body: some View {
+        Section {
+            LabeledContent("Threshold θ") {
+                Text(calibration.measured == nil
+                    ? String(format: "%.2f (default, no neutral takes yet)", calibration.threshold)
+                    : String(format: "%.2f from %d neutral takes", calibration.threshold, calibration.neutralTakes))
+                    .monospacedDigit()
+            }
+            HStack {
+                Button("Compare WER With and Without the Gate", action: evaluation.start)
+                    .disabled(evaluation.isRunning)
+                Spacer()
+                if let progress = evaluation.progress {
+                    ProgressView(value: Double(progress.done), total: Double(progress.total)).frame(width: 120)
+                }
+            }
+            if let problem = evaluation.problem { Text(problem).foregroundStyle(.red) }
+            if let report = evaluation.report {
+                Check(label: "Gate costs ≤ 1 WER point on \(GateEvaluation.takeCount) takes",
+                      value: String(format: "%.1f%% with, %.1f%% without, %d takes", report.gatedWer * 100, report.ungatedWer * 100, report.takes),
+                      passed: report.passed)
+                if report.gatedEmpty > 0 {
+                    Text("The gate let nothing through on \(report.gatedEmpty) takes.").foregroundStyle(.orange)
+                }
+                if report.takes < GateEvaluation.takeCount {
+                    Text("Record \(GateEvaluation.takeCount - report.takes) more aloud or whisper takes for the full check.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } header: {
+            Text("Mouth Gate")
+        } footer: {
+            Text("Uses the newest accepted aloud and whisper sentence takes from the Recorder.")
+        }
+        .task(id: recorder.savedCount) { await calibration.refresh(from: recorder.store) }
     }
 }
 

@@ -67,6 +67,8 @@ final class RecorderModel {
     private(set) var sittingKind: SittingKind = .training
 
     let store: SessionStore
+    /// Called after a take is saved, with its prompt. The app uses it to recalibrate the mouth gate.
+    @ObservationIgnored var onSaved: ((RecorderPrompt) -> Void)?
 
     @ObservationIgnored private let devices: DeviceManager
     @ObservationIgnored private let sessions: SessionManager
@@ -319,6 +321,7 @@ final class RecorderModel {
                 return
             }
             savedCount += 1
+            onSaved?(take.prompt)
             if currentBlock?.kind == .syncCheck, let lag = take.sync?.lagMs { sittingOffsetMs = lag }
             phase = .ready
             advance()

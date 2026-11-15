@@ -24,6 +24,14 @@ settings:
 packages:
   TacitKit:
     path: Packages/TacitKit
+  # Mac only. Pinned, since dictation latency and model ids are measured against these versions.
+  # KeyboardShortcuts 3.x needs Swift 6.2 tools (Xcode 26), so this stays on 2.4.0 until Xcode moves.
+  WhisperKit:
+    url: https://github.com/argmaxinc/WhisperKit
+    exactVersion: 1.1.1
+  KeyboardShortcuts:
+    url: https://github.com/sindresorhus/KeyboardShortcuts
+    exactVersion: 2.4.0
 
 targets:
   TacitType-macOS:
@@ -36,6 +44,9 @@ targets:
         buildPhase: resources
     dependencies:
       - package: TacitKit
+      - package: WhisperKit
+        product: WhisperKit
+      - package: KeyboardShortcuts
     info:
       path: Apps/TacitType-macOS/Info.plist
       properties:
@@ -47,6 +58,7 @@ targets:
         LSApplicationCategoryType: public.app-category.productivity
         NSLocalNetworkUsageDescription: Tacit Type connects to your iPhone to receive face and audio data.
         NSBonjourServices: [_tacittype._tcp]
+        NSAccessibilityUsageDescription: Tacit Type types your dictation into the app you're using.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.tacittype.mac

@@ -58,6 +58,8 @@ public enum TakeQuality {
         case lowLight = "low_light"
         /// Fewer than 98% of the expected mouth frames arrived.
         case mouthDropped = "mouth_dropped"
+        /// Set by the label job: Whisper's transcript is more than 0.3 WER from the prompt, so the take is a misread.
+        case transcriptMismatch = "transcript_mismatch"
     }
 
     public static let minTrackedRatio = 0.95

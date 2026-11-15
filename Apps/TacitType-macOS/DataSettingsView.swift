@@ -8,6 +8,7 @@ enum DataSettings {
 
 struct DataSettingsView: View {
     @Environment(RecorderModel.self) private var recorder
+    @Environment(LabelJob.self) private var labelJob
     @AppStorage(DataSettings.saveSessionsKey) private var saveSessions = false
     @State private var usage: Usage?
     @State private var confirmingDelete = false
@@ -57,13 +58,41 @@ struct DataSettingsView: View {
                 }
                 if let problem { Text(problem).foregroundStyle(.red) }
             }
+
+            Section {
+                HStack {
+                    Button("Label Sessions", action: labelJob.start)
+                        .disabled(labelJob.isRunning)
+                    if labelJob.isRunning { Button("Stop", action: labelJob.cancel) }
+                    Spacer()
+                    labelStatus
+                }
+            } header: {
+                Text("Labels")
+            } footer: {
+                Text("Transcribes every aloud and whisper session that has no transcript yet. Takes that don't match their prompt are flagged and left out of training.")
+            }
         }
         .formStyle(.grouped)
         .task(id: recorder.savedCount) { await refresh() }
+        .onChange(of: labelJob.phase) { Task { await refresh() } }
         .confirmationDialog("Delete all saved sessions?", isPresented: $confirmingDelete) {
             Button("Delete All Sessions", role: .destructive) { deleteAll() }
         } message: {
             Text("This removes every recorded take from this Mac. You can't undo it.")
+        }
+    }
+
+    @ViewBuilder private var labelStatus: some View {
+        switch labelJob.phase {
+        case .idle: EmptyView()
+        case .preparing: Text("Loading the speech model…").foregroundStyle(.secondary)
+        case let .running(done, total):
+            ProgressView(value: Double(done), total: Double(max(total, 1))) { Text("\(done) of \(total)").monospacedDigit() }
+                .frame(width: 160)
+        case let .finished(labelled, flagged, failed):
+            Text("Labelled \(labelled), flagged \(flagged)\(failed > 0 ? ", \(failed) failed" : "")").foregroundStyle(.secondary)
+        case let .failed(message): Text(message).foregroundStyle(.red)
         }
     }
 

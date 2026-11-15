@@ -1,0 +1,20 @@
+{
+  "createdAt" : "2026-11-05T00:01:40Z",
+  "model" : "openai_whisper-small.en",
+  "text" : "The birch canoe slid on the smooth planks.",
+  "wer" : 0.125,
+  "words" : [
+    {
+      "end" : 0.41,
+      "p" : 0.98,
+      "start" : 0.32,
+      "w" : "The"
+    },
+    {
+      "end" : 0.7,
+      "p" : 0.875,
+      "start" : 0.41,
+      "w" : " birch"
+    }
+  ]
+}
