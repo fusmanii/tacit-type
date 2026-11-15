@@ -24,6 +24,8 @@
 	<string>public.app-category.productivity</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSAccessibilityUsageDescription</key>
+	<string>Tacit Type types your dictation into the app you're using.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_tacittype._tcp</string>

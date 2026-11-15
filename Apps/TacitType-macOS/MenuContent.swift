@@ -13,8 +13,8 @@ struct MenuContent: View {
 
         Divider()
 
-        Text("Dictate: hold ⌃⌥Space")
-        Text("Silent dictate: hold ⌃⌥S")
+        Text("Dictate: press \(TriggerCenter.shortcutText(for: .dictate)) to start and stop")
+        Text("Silent dictate: press \(TriggerCenter.shortcutText(for: .silentDictate)) to start and stop")
 
         Divider()
 

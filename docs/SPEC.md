@@ -195,17 +195,17 @@ The Mac app is a menu-bar-only app (`LSUIElement = YES`, SwiftUI `MenuBarExtra`)
 
 ### Triggers (v1)
 
-Push-to-talk: hold to capture, release to process. Use the `KeyboardShortcuts` Swift package (sindresorhus) for user-configurable global hotkeys with key-down and key-up callbacks.
+Both modes are toggles: press once to capture, press again to process. Use the `KeyboardShortcuts` Swift package (sindresorhus) for user-configurable global hotkeys with key-down and key-up callbacks.
 
 | Mode | Default hotkey | On key down | On key up |
 | --- | --- | --- | --- |
-| Dictate (spoken/whisper) | hold ⌃⌥Space | send `start` with streams `[audio, face, mouth]` | keep 300 ms tail, then `stop`, run `DictationPipeline` |
-| Silent dictate | hold ⌃⌥S | send `start` with streams `[mouth, face, audio]` | keep 300 ms tail, then `stop`, run `SilentDictationPipeline` |
+| Dictate (spoken/whisper) | press ⌃⌥Space once | send `start` with streams `[audio, face, mouth]` | nothing. Press again to keep a 300 ms tail, then `stop`, run `DictationPipeline` |
+| Silent dictate | press ⌃⌥S once | send `start` with streams `[mouth, face, audio]` | nothing. Press again to keep a 300 ms tail, then `stop`, run `SilentDictationPipeline` |
 | Record (training) | from Recorder window | `start` with `promptText` | `stop` on button or prompt timer |
 
 Always request all three streams, even when a mode only needs one. Every real use then doubles as training data, if the user has turned on "Save sessions for training" (off by default).
 
-If the user taps instead of holding (< 250 ms), ignore it. If the iPhone isn't connected, the HUD shows "iPhone not connected" and nothing is sent.
+If the second press comes within 250 ms of the first, cancel and type nothing. If the iPhone isn't connected, the HUD shows "iPhone not connected" and nothing is sent.
 
 ### Text insertion
 
@@ -243,6 +243,7 @@ Step 1 makes the data engine: a Recorder window that walks the user through prom
 
 - `face.bin` header: magic `SFCE` (4 bytes), UInt16 featureSchemaVersion, UInt16 lipVertexCount, UInt32 frameCount, UInt32 reserved. Records follow back to back, so Python reads them with `numpy.fromfile` and a structured dtype.
 - `audio.wav` starts at the PTS of the first audio sample. If chunks arrive with a gap (PTS jump > 1 ms), fill the gap with zeros so sample index ↔ time stays linear, and count it in `audioGapsFilled`.
+- `transcript.json`: `{ text, words: [{ w, start, end, p }], model, createdAt, wer? }`. Word times are seconds from `firstAudioTs`. `words` is empty when live dictation wrote it. `wer` is against `promptText` and only set for Recorder takes.
 - `mouth.mp4`: written by the Mac with `AVAssetWriter` (H.264, high quality, constant 25 fps). The exact capture time of each frame lives in `mouth.bin`: magic `SMTH`, UInt16 version, UInt16 landmarkCount, UInt32 frameCount, then per frame Float64 timestamp + landmarks. The manifest adds `mouthFrameCount`, `mouthFps` and `meanLuma`.
 
 ### manifest.json fields
@@ -269,6 +270,7 @@ A SwiftUI window that runs blocks of prompts. Each block has a speech style and 
 | --- | --- | --- | --- |
 | Sync check | "pa pa pa pa pa" aloud | 1 per Recorder launch | Measures face/audio/video offset |
 | Aloud sentences | Harvard + everyday prompts (`ml/prompts/`), shuffled | 50 per sitting | Step 3 fine-tuning |
+| Whisper sentences | 10 of the aloud block's prompts, whispered | 10 per sitting | M4 dictation and mouth-gate checks |
 | Silent sentences | The same prompts, mouthed | 50 per sitting | Step 3 fine-tuning (the real task) |
 | Test set | 100 everyday prompts, silent | Once, in its own sitting | Held-out score; never trained on |
 | Neutral | "Stay still" | 3 × 10 s per sitting | Neutral face + `MouthActivity` threshold |
@@ -289,7 +291,7 @@ The review strip draws the audio waveform with `jawOpen` and `mouthClose` curves
 
 Flagged takes are saved with `quality.ok = false` and excluded by the Python loader by default.
 
-Flag names: `poor_tracking`, `no_speech`, `audible_in_silent`, `too_short`, `too_long`, `sync_offset`, `sync_failed`, `incomplete`, `low_light`, `mouth_dropped`. The checks live in `TacitKit/Features/TakeQuality.swift` and `SyncCheck.swift`.
+Flag names: `poor_tracking`, `no_speech`, `audible_in_silent`, `too_short`, `too_long`, `sync_offset`, `sync_failed`, `incomplete`, `low_light`, `mouth_dropped`, `transcript_mismatch` (set by the label job in Step 2). The checks live in `TacitKit/Features/TakeQuality.swift` and `SyncCheck.swift`.
 
 Recorder details settled in M3:
 
@@ -305,11 +307,11 @@ Recorder details settled in M3b:
 
 ### Python loader (ml/silentml/data.py)
 
-`load_session(path) -> Session(face: np.ndarray[T, F], face_ts: np.ndarray[T], audio: np.ndarray[S], audio_t0: float, manifest: dict, tracked: np.ndarray[T], path: Path, mouth: np.ndarray[N, 192, 192] | None, mouth_ts: np.ndarray[N] | None, mouth_landmarks: np.ndarray[N, 12, 2] | None)` plus `iter_sessions(root, style=None, ok_only=True)`. A unit test in Swift writes a synthetic session and a pytest reads it back and checks every field, so the two sides can't drift. `mouth.mp4` is decoded with PyAV, taking the Y plane and expanding video range back to 0 … 255 exactly as Swift does.
+`load_session(path) -> Session(face: np.ndarray[T, F], face_ts: np.ndarray[T], audio: np.ndarray[S], audio_t0: float, manifest: dict, tracked: np.ndarray[T], path: Path, mouth: np.ndarray[N, 192, 192] | None, mouth_ts: np.ndarray[N] | None, mouth_landmarks: np.ndarray[N, 12, 2] | None, transcript: dict | None)` plus `iter_sessions(root, style=None, ok_only=True)`. A unit test in Swift writes a synthetic session and a pytest reads it back and checks every field, so the two sides can't drift. `mouth.mp4` is decoded with PyAV, taking the Y plane and expanding video range back to 0 … 255 exactly as Swift does.
 
 ## Step 2 — Spoken and whisper mode
 
-Step 2 proves the whole loop before any ML training: hold the hotkey, speak or whisper, release, and the text lands in the focused app within 1.5 s. It also auto-labels the aloud sessions from Step 1.
+Step 2 proves the whole loop before any ML training: press the hotkey, speak or whisper, press it again, and the text lands in the focused app within 1.5 s. It also auto-labels the aloud sessions from Step 1.
 
 ### Pipeline
 
@@ -344,7 +346,7 @@ Log per session: seconds of audio gated out, whether the gate was bypassed, gate
 | Fast (default) | `openai_whisper-small.en` | \~250 MB | Short dictation, any Apple silicon Mac |
 | Accurate | `openai_whisper-large-v3-v20240930_turbo` | \~600 MB+ | Better on whispers and names; M2 or newer recommended |
 
-Download on first use to `Application Support/TacitType/models` with a progress bar. Call `prewarmModels()` at launch and keep the pipeline in memory. Verify the exact model ids against WhisperKit's model repo at implementation time.
+Download on first use to `Application Support/TacitType/models` with a progress bar. Call `prewarmModels()` at launch and keep the pipeline in memory. Both model ids were checked against `argmaxinc/whisperkit-coreml` on Nov 15, 2026, with WhisperKit 1.1.1.
 
 ### Latency budget (key up → text inserted)
 
@@ -366,6 +368,22 @@ Measure: if the mouth gate is open and peak RMS before normalisation is under �
 ### Auto-labelling job (optional quality check for Step 3)
 
 A "Label sessions" button in Settings → Data runs WhisperKit with `wordTimestamps: true` over every `aloud` / `whisper` session lacking `transcript.json`. It writes `{ text, words: [{ w, start, end, p }], model, createdAt }`, with times relative to `firstAudioTs`. If `promptText` exists, also store the word error rate between the transcript and the prompt. Takes with WER > 0.3 get flagged so bad reads don't pollute training.
+
+### Dictation details settled in M4
+
+- WhisperKit is pinned to 1.1.1. KeyboardShortcuts is pinned to 2.4.0, because 3.x needs Swift 6.2 tools and so Xcode 26.
+- The model loads at launch only when it is already on disk. Otherwise it downloads on the first dictation, with progress in the HUD, or from Settings → Dictation.
+- The default gate threshold θ is 1.0 blendshape units per second. ARKit jitter on a still face scores about 0.2 to 0.4, and speech scores 2 to 8. Once accepted neutral takes exist, θ comes from them and Diagnostics shows which one is in use.
+- Audio starts about 420 ms before the TrueDepth camera does. If the mouth is already moving within 100 ms of the first tracked frame, the first open region reaches back to the start of the audio, so a word spoken right at key down is kept.
+- The label job normalises the audio the same way dictation does and skips the WER flag on the sync check take. A take more than 0.3 WER from its prompt gets `transcript_mismatch` and `quality.ok = false`.
+- When "Save sessions for training" is on, a dictation is saved with mode `dictate`, its tagged speech style, and a `transcript.json` holding Whisper's raw text with no word timings. The label job leaves it alone because it already has a transcript.
+- Dictate is a toggle, not push-to-talk. The first press starts capture and the second press stops it, so the latency budget runs from the second press. A second press within 250 ms of the first cancels. If the iPhone hits its 120 s safety timeout first, the next press still transcribes what was captured. Silent dictate works the same way from M5.
+- Silent dictate (⌃⌥S) is registered now and shows "Silent dictation arrives in M5" in the HUD.
+- The paste fallback marks the pasteboard with `org.nspasteboard.TransientType` so clipboard managers skip the dictated text. It restores the old contents only if nothing else wrote to the pasteboard in those 150 ms.
+- AX insertion counts as failed when the focused element's value is readable and did not change. Slack, VS Code, Discord and Notion start on the paste override list.
+- The `FoundationModels` punctuation polish is written behind `#if canImport(FoundationModels)`. It only compiles with the macOS 26 SDK and has not run yet. The polished text is used only if its words match Whisper's exactly.
+- `make run-signed` signs the Debug build with the team in `Config/Signing.local.xcconfig`. macOS keeps the Accessibility grant across rebuilds only for a stable signature, so use it instead of `make run` when testing dictation.
+- Diagnostics shows stop press → inserted p50 and p95 against the M4 budgets, a per-stage breakdown of the last dictation, and a button that runs Whisper with and without the gate on the newest 20 accepted aloud and whisper Recorder takes.
 
 ## Step 3 — Silent dictation (video lip-reading)
 
@@ -492,11 +510,11 @@ Build in this order; each milestone ends with its checks passing. Hand Claude Co
 
 **M4 — Dictation** (Step 2)
 
-- [ ] Hold hotkey, whisper a sentence, release: text appears in TextEdit, Notes, Slack, VS Code and Chrome
-- [ ] Key up → inserted p50 < 1.1 s, p95 < 1.5 s (small.en, M1 or newer)
+- [ ] Press the hotkey, whisper a sentence, press it again: text appears in TextEdit, Notes, Slack, VS Code and Chrome
+- [ ] Stop press → inserted p50 < 1.1 s, p95 < 1.5 s (small.en, M1 or newer)
 - [ ] Pasteboard contents are restored after paste fallback
 - [ ] Label job writes `transcript.json` for all aloud and whisper takes
-- [ ] Mouth gate: holding the hotkey with your mouth closed while someone talks next to you inserts nothing, 10 of 10 tries
+- [ ] Mouth gate: dictating with your mouth closed while someone talks next to you inserts nothing, 10 of 10 tries
 - [ ] Mouth gate doesn't hurt accuracy: on 20 recorded test takes (aloud + whisper), word error rate with the gate is no more than 1 point worse than without it
 
 **M5 — Silent dictation** (Step 3)
@@ -506,7 +524,7 @@ Build in this order; each milestone ends with its checks passing. Hand Claude Co
 - [ ] ≥ 1,000 aloud + 1,000 silent sentence takes across ≥ 8 sittings, plus the 100-prompt test set
 - [ ] Fine-tuned model beats the baseline's silent WER on 2 held-out sittings
 - [ ] Python sidecar starts with the Mac app and survives a crash/restart
-- [ ] Hold ⌃⌥S, mouth a sentence, release: text appears in the focused app ≤ 2.5 s later
+- [ ] Press ⌃⌥S, mouth a sentence, press it again: text appears in the focused app ≤ 2.5 s later
 - [ ] Test set: ≥ 7 of 10 everyday phrases correct in meaning after LLM cleanup
 
 **M6 — Demo-ready**
@@ -534,4 +552,3 @@ Build in this order; each milestone ends with its checks passing. Hand Claude Co
 - Name is **Tacit Type** for both apps. Before any public demo, secure the domain, the App Store name and the X/GitHub handle.
 - Licence terms of the pretrained weights, if Tacit Type is ever sold.
 - Minimum iPhone model: confirm 60 fps face tracking plus mouth cropping on the oldest TrueDepth device you own.
-- Exact WhisperKit model ids and sizes: verify against its model repo when M4 starts.

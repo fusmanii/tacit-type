@@ -8,12 +8,16 @@ public struct StoredSession: Sendable, Equatable {
     /// Mouth crops as they came off the wire. Written as `mouth.bin` + `mouth.mp4`. Empty when the
     /// session has no mouth video. `SessionStore.read` leaves it empty, use `readMouth` instead.
     public var mouth: [MouthFrame]
+    /// `transcript.json`, when the label job or live dictation wrote one.
+    public var transcript: Transcript?
 
-    public init(manifest: SessionManifest, frames: [FaceFrame], audio: [Int16], mouth: [MouthFrame] = []) {
+    public init(manifest: SessionManifest, frames: [FaceFrame], audio: [Int16], mouth: [MouthFrame] = [],
+                transcript: Transcript? = nil) {
         self.manifest = manifest
         self.frames = frames
         self.audio = audio
         self.mouth = mouth
+        self.transcript = transcript
     }
 }
 
@@ -26,7 +30,7 @@ public struct MouthTrack: Sendable, Equatable {
 
 /// Writes and reads session folders:
 ///
-///     <root>/2026-11-07/<sessionId>/{manifest.json, face.bin, audio.wav, mouth.mp4, mouth.bin}
+///     <root>/2026-11-07/<sessionId>/{manifest.json, face.bin, audio.wav, mouth.mp4, mouth.bin, transcript.json}
 ///
 /// `ml/silentml/data.py` reads the same folders. `manifest.json` is written last, so a folder
 /// with a manifest is a complete session.
@@ -36,6 +40,7 @@ public struct SessionStore: Sendable {
     public static let audioName = "audio.wav"
     public static let mouthVideoName = "mouth.mp4"
     public static let mouthName = "mouth.bin"
+    public static let transcriptName = "transcript.json"
 
     public let root: URL
     /// Decides which day folder a session lands in.
@@ -72,6 +77,7 @@ public struct SessionStore: Sendable {
             try await MouthVideo.write(pixels, to: folder.appending(path: Self.mouthVideoName))
             try MouthFile.encode(session.mouth).write(to: folder.appending(path: Self.mouthName))
         }
+        if let transcript = session.transcript { try writeTranscript(transcript, at: folder) }
         try Self.encode(session.manifest).write(to: folder.appending(path: Self.manifestName), options: .atomic)
         return folder
     }
@@ -93,7 +99,23 @@ public struct SessionStore: Sendable {
         guard wav.sampleRate == Int(Constants.audioSampleRate) else {
             throw SessionFileError.unsupportedWav("sample rate \(wav.sampleRate)")
         }
-        return StoredSession(manifest: manifest, frames: frames, audio: wav.samples)
+        return StoredSession(manifest: manifest, frames: frames, audio: wav.samples, transcript: try readTranscript(at: folder))
+    }
+
+    /// Nil when the folder has no `transcript.json`.
+    public func readTranscript(at folder: URL) throws -> Transcript? {
+        let url = folder.appending(path: Self.transcriptName)
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return try Self.decoder.decode(Transcript.self, from: Data(contentsOf: url))
+    }
+
+    public func writeTranscript(_ transcript: Transcript, at folder: URL) throws {
+        try Self.encoder.encode(transcript).write(to: folder.appending(path: Self.transcriptName), options: .atomic)
+    }
+
+    /// Rewrites `manifest.json` in place, for example after the label job flags a take.
+    public func writeManifest(_ manifest: SessionManifest, at folder: URL) throws {
+        try Self.encode(manifest).write(to: folder.appending(path: Self.manifestName), options: .atomic)
     }
 
     public func readManifest(at folder: URL) throws -> SessionManifest {
@@ -134,10 +156,14 @@ public struct SessionStore: Sendable {
 
     /// Sorted keys and ISO 8601 dates, so the same manifest always gives the same bytes.
     public static func encode(_ manifest: SessionManifest) throws -> Data {
+        try encoder.encode(manifest)
+    }
+
+    private static var encoder: JSONEncoder {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        return try encoder.encode(manifest)
+        return encoder
     }
 
     private static var decoder: JSONDecoder {
