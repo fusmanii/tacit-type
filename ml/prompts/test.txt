@@ -1,0 +1,103 @@
+# Held-out test set for silent dictation. Recorded once, silently, in a sitting of its own.
+# Never train on these, and keep them out of everyday.txt.
+# Prompt ids are test-0001 to test-0100 by position. Comment lines don't count, so only append.
+On my way, see you in ten minutes.
+Can you send me the slides before lunch?
+I'll call you back after this meeting.
+Sounds great, let's do Thursday at noon.
+Running a little behind, start without me.
+Thanks so much for your help today.
+Did you remember to feed the cat?
+Let me know when you get home safe.
+I'm stuck in traffic on the bridge.
+Could we push the call to tomorrow morning?
+Happy birthday, hope you have a lovely day!
+Please review the pull request when you can.
+We're out of milk and eggs again.
+I left my keys on the kitchen table.
+What time does the movie start tonight?
+Just landed, grabbing my bags now.
+The build is green, ready to merge.
+Could you collect the twins from swim class?
+Let's grab coffee sometime next week.
+I don't think that's going to work.
+Good morning, how did you sleep?
+Remind me to book the dentist appointment.
+Is the meeting still on for today?
+I'm heading out, back in an hour.
+Great job on the presentation this morning.
+The package should arrive by Friday.
+Do you want pizza or tacos for dinner?
+Sorry, I missed your call earlier.
+I'll be working from home tomorrow.
+Can you resend the link, it expired?
+Let's table this until we have more data.
+Please turn off the lights when you leave.
+I'm almost done, give me five more minutes.
+That makes sense, thanks for explaining.
+Where should we meet for brunch on Sunday?
+The printer on the second floor is jammed again.
+I'll take care of it first thing tomorrow.
+Have you seen my blue jacket anywhere?
+We need to leave by seven at the latest.
+Mind if I join the call a few minutes late?
+I just pushed a fix for the login bug.
+Let's keep this between us for now.
+How was your trip to the mountains?
+Can you water the plants while I'm away?
+I'm not feeling well, taking a sick day.
+The rent is due on the first of the month.
+Let me check my calendar and get back to you.
+Don't forget your umbrella, it's going to rain.
+I booked a table for four at eight.
+Could you lower the music a little?
+Thanks for the update, that's really helpful.
+I'll meet you at the front entrance.
+Did the delivery guy leave a note?
+Please add bread to the shopping list.
+We should celebrate when this ships.
+Can you hear me okay, or should I dial in again?
+The train is delayed by twenty minutes.
+I love that idea, let's try it.
+Let's go over the budget on Monday.
+My phone is about to die, talk later.
+What's the password for the guest wifi?
+I'll send the invoice by end of day.
+Want to go for a walk after work?
+The doctor said everything looks fine.
+Can we move dinner to Saturday instead?
+I'm grabbing lunch, want anything?
+Please sign the form and send it back.
+It's freezing outside, wear a warm coat.
+My laptop charger has gone missing again.
+That was the best meal I've had all year.
+We should probably head home soon.
+Can you share your screen for a second?
+Let me think about it overnight.
+Our flight leaves at six in the morning.
+I already paid for the tickets.
+Could you proofread this email for me?
+The game starts at seven, don't be late.
+I'll bring dessert to the party.
+How much do I owe you for dinner?
+Text me when you're outside.
+Let's start with the most important item.
+I'm really proud of what we built.
+The kids are finally asleep.
+Can you take a look at the error logs?
+I need to renew my passport this spring.
+See you at the gym tomorrow morning.
+Please don't share this outside the team.
+I think we took a wrong turn somewhere.
+The coffee machine is broken again.
+Let's wrap up and pick this up tomorrow.
+Could you hold the door for a moment?
+I'll be offline for the rest of the afternoon.
+What do you want to do this weekend?
+Thanks for waiting, I'm here now.
+The tests are failing on the main branch.
+I'm making soup, come over if you're hungry.
+Can you call the plumber about the leak?
+Good night, talk to you tomorrow.
+Let's catch up properly next week.
+We're almost out of gas, I'll stop on the way.

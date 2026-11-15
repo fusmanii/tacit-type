@@ -45,7 +45,7 @@ tacittype/
     prompts/                   # Harvard + everyday sentence lists
     third_party/usr2/          # pinned submodule: USR 2.0 (primary model)
     third_party/auto_avsr/     # pinned submodule: Auto-AVSR (fallback)
-    silentml/{data,preprocess,models,finetune,evaluate,serve}.py
+    silentml/{data,preprocess,models,cropcheck,evaluate,finetune,serve}.py
   docs/                        # this spec, exported as SPEC.md
 ```
 
@@ -301,7 +301,7 @@ Recorder details settled in M3:
 
 Recorder details settled in M3b:
 
-- Prompt lists live in `ml/prompts/` and are copied into the Mac app bundle. `harvard.txt` is there. `everyday.txt` (about 1,300 lines, reviewed by hand) and `test.txt` (100 lines) still need writing. Until `everyday.txt` exists the sentence blocks draw from Harvard only, and "New Test Set Sitting" has nothing to show until `test.txt` exists. Lines starting with `#` are comments. Prompt ids are the file name plus a 4-digit line number, for example `everyday-0012`.
+- Prompt lists live in `ml/prompts/` and are copied into the Mac app bundle. `harvard.txt` is there, and M5a added `everyday.txt` (1,205 lines) and `test.txt` (100 lines). Both still need your review by hand before the first sitting that uses them. The sentence blocks draw from Harvard and everyday together. Lines starting with `#` are comments. Prompt ids are the file name plus a 4-digit line number, for example `everyday-0012`.
 - Neutral takes are saved with `speechStyle` `negative`, so `iter_sessions(style="negative")` returns them with any other no-speech takes.
 - The sync check runs twice on the same take, once against `jawOpen` and once against mouth-crop openness (how dark the middle of the crop is). Both lags are shown, and either failing asks for a redo.
 
@@ -428,7 +428,7 @@ What this means for Tacit Type:
 | Test set | 100 everyday prompts, silent, in their own sitting | \~20 min | Never trained on; the honest score |
 | Baseline | 50 aloud + 50 silent | \~30 min | Phase A go/no-go |
 
-**Prompt corpus** (`ml/prompts/`): the 720 Harvard sentences plus \~1,300 everyday message-style sentences, 4–15 words each ("running ten minutes late", "sounds good, ship it"). Generate the everyday list once with an LLM, review it by hand, and commit it. Start with 1,000 prompts each way; grow to 2,000 if WER is still dropping.
+**Prompt corpus** (`ml/prompts/`): the 720 Harvard sentences plus 1,205 everyday message-style sentences, 4–15 words each ("running ten minutes late", "sounds good, ship it"). Generate the everyday list once with an LLM, review it by hand, and commit it. Start with 1,000 prompts each way; grow to 2,000 if WER is still dropping.
 
 **Sittings:** 8–10 sittings of 30–40 minutes on different days, light and phone positions. Validation and test always hold out whole sittings.
 
@@ -457,6 +457,22 @@ If silent WER is above \~90%, fix preprocessing (crop size, alignment, frame rat
 1. The model's beam search (beam 10–20) returns the top 5 hypotheses with scores.
 2. The on-device LLM (Apple `FoundationModels`, macOS 26+) gets the 5 guesses, the name of the focused app, and a note that p/b/m, f/v and t/d/n look identical on the lips. It returns the most likely sentence.
 3. 800 ms timeout; on timeout or without macOS 26, use the top hypothesis. No cloud LLM in v1.
+
+### Model harness details settled in M5a
+
+- Both repos are git submodules in `ml/third_party`. USR 2.0 is pinned to `e9e9c94` (Sep 9, 2026) and Auto-AVSR to `182b628` (Jan 8, 2025). `make ml-env` fetches them and installs the `models` extra. Python 3.14 with torch 2.15 works, so there is no older Python to pin.
+- USR 2.0 ships no fine-tuning code for visual speech. Its `main.py` only evaluates, and its CTC module has no loss function. Auto-AVSR has a working `train.py` that starts from a pretrained checkpoint. Phase B therefore either writes a training loop around USR 2.0 or fine-tunes Auto-AVSR. Decide once Phase A shows which model reads you better.
+- Checkpoints come from the authors' Google Drive links. `make ml-models` downloads USR 2.0 Large (high-resource, 21.5% WER) and Auto-AVSR into `~/Library/Application Support/TacitType/models/lipreading`. Auto-AVSR's file is checked against the MD5 prefix in its README. USR 2.0 publishes no hash, so the download prints a SHA-256 to record. Checkpoints load with `weights_only=True`, so a tampered file can't run code.
+- `silentml.models.load(name)` returns a reader with `preprocess(session)` and `nbest(clip, n=5)`. Both repos name their packages the same way (`espnet` and others), so one process can load only one repo. `evaluate` runs one model per call for this reason.
+- The n-best list is the beam search's own sorted list of finished hypotheses, with repeated texts removed. Neither repo's code needed changing for it.
+- ESPnet's batched CTC scorer only knows CUDA or CPU. On a Mac the encoder runs on the GPU (MPS) and the beam search runs on the CPU.
+- `silentml.preprocess` maps the 12 `mouth.bin` landmarks onto 68-point iBUG indices and hands them to each repo's own `VideoProcess`. The mapping is eyes to 36, 39, 42 and 45, nose bridge to 28, nose tip to 30, nose base to 33, mouth corners to 48 and 54, lip centres to 51 and 57, and chin to 8. The other mouth slots hold the mouth centre, so points 48 to 67 average to the same centre the iPhone crop uses.
+- The iPhone crop is a rotation of the camera image, so it keeps the image's handedness. If the subject's right eye sits on the right of the crop, the clip is mirrored and flipped back before alignment. Frames are also put on an even 25 fps grid, and a dropped frame repeats its neighbour.
+- A clip needs at least 12 frames (0.48 s), because both repos smooth landmarks over a 12-frame window.
+- `python -m silentml.cropcheck` draws 20 takes beside the mean face both models align to, and reports how far each alignment point lands from it. No weights are needed, so it can run on the first sitting before any download.
+- `python -m silentml.evaluate` writes `runs/<name>/metrics.json` and a per-take file. It reports WER, CER and an n-best oracle WER, which is the best any reranking could reach. Test-set prompts are left out unless `--test-set` is passed. The model's share of the 2.5 s budget is 1.3 s for a 5 s clip, once the 350 ms tail, 800 ms of LLM cleanup and 50 ms of insertion are taken out. The choice in `metrics.json` follows the Phase A rule.
+- Phase A needs no special block. One normal training sitting records 50 sentences aloud and the same 50 silently.
+- Apple's on-device model was checked on macOS 27.2 with Xcode 27.2. Its first call took 1.5 s and the next took 0.26 s, so M5c must prewarm it at launch. The same goes for M4's punctuation polish.
 
 ### Running it on the Mac (v1)
 
@@ -526,6 +542,14 @@ Build in this order; each milestone ends with its checks passing. Hand Claude Co
 - [ ] Python sidecar starts with the Mac app and survives a crash/restart
 - [ ] Press ⌃⌥S, mouth a sentence, press it again: text appears in the focused app ≤ 2.5 s later
 - [ ] Test set: ≥ 7 of 10 everyday phrases correct in meaning after LLM cleanup
+
+M5 is built in five parts. M5a is code that needs no data. M5b needs one recorded sitting and the checkpoints. M5c can run on the pretrained model before any fine-tuning.
+
+- [x] M5a: model harness. Submodules, `preprocess`, `models` with n-best, `evaluate`, `cropcheck`, and the everyday and test prompt lists
+- [ ] M5b: Phase A. Record one sitting, run the crop check, score both models, and pick one
+- [ ] M5c: Mac pipeline. `serve`, `ModelSidecar`, `SilentDictationPipeline`, the Silent Dictation settings tab and the LLM cleanup
+- [ ] M5d: data collection. 8 to 10 sittings and the test-set sitting
+- [ ] M5e: fine-tuning. `finetune`, one GPU run, and the held-out and test-set scores
 
 **M6 — Demo-ready**
 
