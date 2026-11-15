@@ -11,8 +11,20 @@ dependencies = ["numpy>=1.26", "av>=12"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
-# Needed from M5 for fine-tuning and the sidecar. torch may lag the newest Python release.
-train = ["torch>=2.3"]
+# The lip-reading models in third_party (git submodules) and the tools around them.
+# setuptools provides distutils, which USR 2.0's ESPnet copy still imports.
+models = [
+    "torch>=2.9",
+    "torchvision>=0.24",
+    "torchaudio>=2.9",
+    "opencv-python-headless>=4.10",
+    "scikit-image>=0.24",
+    "sentencepiece>=0.2",
+    "omegaconf>=2.3",
+    "six",
+    "setuptools",
+    "gdown>=5",
+]
 
 [tool.setuptools]
 packages = ["silentml"]

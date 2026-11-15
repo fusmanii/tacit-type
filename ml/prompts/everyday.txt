@@ -1,0 +1,1256 @@
+# Everyday message-style sentences for Recorder sittings, 4 to 15 words each.
+# Written with an LLM on Nov 15, 2026, then reviewed by hand. Numbers are spelled out, because the
+# models write words. Use straight apostrophes only. Nothing here may repeat a line of test.txt.
+# Prompt ids are everyday-0001 onwards by position. Comment lines don't count, so fix a line in
+# place before it has been recorded, and after that only append.
+
+# Running late and getting places
+Running ten minutes late, sorry about that.
+I'm five minutes away, order without me.
+Leaving now, should be there by half past.
+Traffic is terrible, I might be a while.
+Just parked, walking over now.
+Missed the bus, catching the next one.
+Can you save me a seat near the front?
+I'm outside, come down when you're ready.
+The roads are icy so I'm driving slowly.
+Be there in twenty, maybe twenty five.
+Sorry, I lost track of time.
+Which entrance should I use?
+I'm at the wrong building, give me a minute.
+Can you send me the address again?
+My ride just cancelled, finding another one.
+Running behind schedule, I'll text when I leave.
+I think I'm lost, can you call me?
+Are you already there?
+Waiting by the fountain in the lobby.
+Pulling into the parking lot now.
+Stuck behind a really slow truck.
+The trains aren't running, I'll take a cab.
+Still at the office, leaving in ten.
+I'll be a bit late to dinner tonight.
+Can you push the reservation back half an hour?
+Almost there, just turning onto your street.
+Don't wait for me, I'll catch up.
+I'm early, grabbing a coffee nearby.
+Is there parking near the restaurant?
+I'm on the third floor, by the elevators.
+Just got off the train.
+Should I meet you there or at your place?
+Walking in now, where are you sitting?
+The highway is closed, taking the long way.
+I overslept, so sorry, leaving right now.
+I'll get there as soon as I can.
+My flight got delayed by two hours.
+Heading to the airport now.
+Boarding soon, talk when I land.
+Landed safely, waiting for my luggage.
+The taxi line is huge here.
+I'm at gate twelve if you want to find me.
+Picking you up at the curb in five.
+Text me your flight number.
+I can drop you off on my way.
+Do you need a ride home after?
+I'll swing by around four.
+Can you give me a lift to the station?
+I'm taking the scenic route today.
+The bridge is backed up again.
+Getting gas, then I'm on my way.
+Five more stops and I'm there.
+Hang on, I'm finding a parking spot.
+I'm in the gray car across the street.
+Look for the guy in the red hat.
+Meet me by the ticket machines.
+The doors open at seven thirty.
+We should leave early to beat the traffic.
+How long does it take to get there?
+I'll walk, it's only ten minutes.
+
+# Work and meetings
+Can we sync for fifteen minutes this afternoon?
+I'm in back to back meetings until three.
+Please add me to the invite.
+Who's taking notes today?
+Let's move the standup to ten.
+I'll present the results on Friday.
+Can you send the agenda ahead of time?
+Do we have a dial in number?
+I need another day to finish the report.
+The deadline moved to next Wednesday.
+Let's loop in the design team.
+Can you share the recording afterwards?
+I'll follow up with an email.
+Let's take this offline.
+Who owns this decision?
+I have a hard stop at two.
+Thanks everyone, great discussion.
+Let's circle back on this next week.
+I'm blocking out focus time this morning.
+The client loved the proposal.
+We need sign off from legal first.
+Can you forward me that thread?
+I'll draft something and share it.
+Let's schedule a quick retro.
+What are the next steps here?
+I'm out of office next Monday.
+Could you cover for me during the meeting?
+The quarterly numbers look strong.
+We're a little behind on the roadmap.
+Let's prioritize the customer issues.
+I'll set up a call with their team.
+Can you review my slides before tomorrow?
+The meeting room is double booked.
+Let's use the big conference room instead.
+I'll update the tracker tonight.
+Please mark it as done when you finish.
+Who's presenting first this morning?
+Can we keep it under thirty minutes?
+I think we need more time on this.
+Good point, I hadn't thought of that.
+Let's write down the open questions.
+I'll take the action item.
+Can you clarify what you mean?
+Let me share my screen.
+I think you're on mute.
+Sorry, can you repeat that?
+The connection keeps dropping.
+I'll join from my phone.
+Let's start, people can catch up.
+The offsite is booked for March.
+Can you approve my time off request?
+I'm interviewing a candidate at eleven.
+The new hire starts on Monday.
+Please welcome our newest team member.
+Let's do a quick round of introductions.
+I'll send a summary after the call.
+Has anyone heard back from the vendor?
+The contract is ready for signature.
+We hit our target for the month.
+Let's celebrate with lunch on Friday.
+Can you check the shared calendar?
+My calendar is wide open on Thursday.
+I'm free any time after lunch.
+Does four o'clock work for you?
+That time doesn't work, how about five?
+Let's find a slot next week.
+I'll put a placeholder on your calendar.
+The all hands is at noon today.
+Please fill out the survey by Friday.
+Expense reports are due at the end of the month.
+I'm working late to finish this.
+Let's not schedule anything on Friday afternoon.
+The budget was approved this morning.
+We need to hire two more engineers.
+I'll ask my manager and get back to you.
+Can we get a status update?
+Everything is on track for launch.
+There's a risk we slip by a week.
+Let's add it to the backlog.
+I disagree, but I'll commit to it.
+That's a great question for the team.
+Let's park that for now.
+Can you own the follow up?
+Who should I talk to about access?
+I'll book the meeting room.
+The slides are in the shared folder.
+Please don't edit the original document.
+I left comments in the doc.
+Can you resolve the comments when you're done?
+The draft is ready for review.
+Let's aim to finish by Thursday.
+I'm heads down on the launch this week.
+Please ping me if anything urgent comes up.
+I'll check messages after lunch.
+Thanks for jumping on this so quickly.
+That was a really productive meeting.
+I appreciate you staying late.
+We couldn't have done it without you.
+Let's keep the momentum going.
+Have a good weekend, everyone.
+
+# Software and computers
+The deploy finished without any errors.
+Can you rerun the failing tests?
+I think the cache is out of date.
+Let's roll back to the previous version.
+The server is down again.
+Did you restart the service?
+I opened a ticket for the crash.
+Can you add a test for that case?
+The pipeline is stuck on the build step.
+Please rebase before you merge.
+I fixed the typo in the readme.
+The staging site is broken.
+Let's turn on the feature flag for everyone.
+The database migration took forever.
+Can you bump the version number?
+I'm pairing with Sam this afternoon.
+The memory usage keeps climbing.
+Let's add some logging around that call.
+I can't reproduce the bug on my machine.
+Which branch are you working on?
+I'll push my changes before lunch.
+The review is waiting on you.
+Looks good to me, ship it.
+Please squash your commits first.
+The API returns an empty list.
+Let's write up a quick design doc.
+The new release is out.
+I updated the dependencies this morning.
+Can you check the error rate on the dashboard?
+The alert fired again overnight.
+I'm on call this week.
+Let's do a postmortem tomorrow.
+Who changed the config file?
+The timeout is way too short.
+Can you clear the queue?
+I accidentally deleted the wrong file.
+Do we have a backup of the data?
+The login page loads really slowly.
+Let's profile it and see what's slow.
+The app crashes when you rotate the phone.
+I'll file a bug with the steps.
+Can you test it on an older device?
+The fix is in the next build.
+Let's freeze the code on Thursday.
+The website is back up now.
+I need admin access to the server.
+Please reset my password.
+The certificate expires next week.
+I'll renew the domain today.
+My laptop keeps freezing.
+Have you tried turning it off and on?
+The update is downloading now.
+I'm installing the new operating system.
+The battery drains really fast lately.
+Can you send me the file as a pdf?
+My inbox is completely out of control.
+I'll clean up the old branches.
+The tests pass locally but fail in the cloud.
+Let's pin the version for now.
+That library hasn't been updated in years.
+We should rewrite this module someday.
+I'm refactoring the payment code.
+The search results look wrong.
+Can you check the spelling on the homepage?
+The button doesn't do anything when I click it.
+The page is blank on mobile.
+Let's ship a hotfix tonight.
+The release notes are ready.
+I merged your pull request.
+There's a conflict in the main file.
+I'll resolve the merge conflict.
+Can you look at the stack trace?
+It works now, thanks for the help.
+The model is still training.
+The accuracy went up a little.
+Let's try a smaller learning rate.
+The GPU ran out of memory.
+I'll rent a bigger machine for the run.
+The dataset needs cleaning first.
+Let's hold out a test set.
+The results look too good to be true.
+Can you double check the numbers?
+I wrote a script to automate that.
+It runs every night at midnight.
+The job failed with a timeout.
+Let's add a retry with a backoff.
+The disk is almost full.
+I'll delete the old logs.
+The network is really slow today.
+Is the wifi working for you?
+I'm going to restart the router.
+The video call keeps freezing.
+Let's switch to audio only.
+My camera isn't working.
+Can you see my screen now?
+I'll record a short demo video.
+The demo went really well.
+They want a few more features.
+Let's scope it down for the first version.
+We can add that in the next release.
+
+# Home and chores
+I'll do the dishes after dinner.
+Can you take out the trash tonight?
+The washing machine is making a weird noise.
+I put a load of laundry in.
+Please move the clothes to the dryer.
+The kitchen sink is clogged again.
+I'll vacuum the living room this afternoon.
+We need to clean the fridge out.
+The smoke alarm battery is beeping.
+Can you change the light bulb in the hallway?
+The heating isn't working upstairs.
+I turned the thermostat down a bit.
+It's way too hot in the bedroom.
+Can you open a window?
+The front door is sticking again.
+I locked the back door.
+Did you lock the car?
+The garage door won't close.
+The landlord is coming by on Tuesday.
+I'll call someone to fix the dishwasher.
+The faucet in the bathroom is dripping.
+We're almost out of toilet paper.
+I'll make the bed before I leave.
+Can you fold the towels?
+The recycling goes out on Wednesdays.
+I'll mow the lawn this weekend.
+The garden needs watering.
+The tomatoes are finally ripe.
+Can you sweep the porch?
+There's a spider in the bathroom.
+I think we have a mouse in the kitchen.
+I'll set up the new bookshelf.
+Where do you want the couch?
+Let's rearrange the living room.
+The new curtains came today.
+I hung the picture in the hallway.
+We should paint the spare room.
+Can you hold the ladder for me?
+I need the screwdriver from the drawer.
+The power went out for a minute.
+The internet is down at home.
+I'll pay the electric bill tonight.
+The water bill seems really high.
+Can you sign for the package if it comes?
+I left a key under the mat.
+The neighbors are having a party.
+It's really loud upstairs tonight.
+I'll shovel the driveway in the morning.
+The gutters need cleaning.
+I'll bring the plants inside before the frost.
+The dog needs a walk.
+Can you feed the fish?
+The cat knocked over a glass again.
+I'll clean the litter box.
+The dog chewed up my shoe.
+We need more dog food.
+I'll take the dog to the vet on Friday.
+Can you let the dog out?
+The cat is sleeping on my laptop.
+I'm doing a big clean on Saturday.
+Let's donate the clothes we don't wear.
+The closet is way too full.
+I found your sunglasses in the couch.
+The mail is on the counter.
+I'll put the groceries away.
+Can you empty the dishwasher?
+I'm running a bath.
+The hot water ran out.
+I'm going to take a quick shower.
+Can you turn the oven off?
+I left the stove on, can you check?
+The house smells amazing.
+I made the guest room up.
+Your mom is staying with us this weekend.
+I'll clear the table.
+Leave your shoes by the door, please.
+I'll start the coffee.
+We're out of coffee filters.
+The fridge is making a humming noise.
+I'll defrost the freezer this weekend.
+Can you check if the back window is closed?
+
+# Food and cooking
+What should we have for dinner tonight?
+I'm making pasta, is that okay?
+Can you pick up some bread on the way home?
+Dinner will be ready in twenty minutes.
+I'm starving, let's eat soon.
+Let's order takeout tonight.
+Do you want Thai or Indian?
+I'll get the usual.
+Can you get extra sauce on the side?
+No onions on mine, please.
+I'm trying to eat less sugar.
+Let's cook something healthy this week.
+I'll make a big salad.
+The soup needs more salt.
+Can you taste this and tell me what it needs?
+I burned the toast again.
+The chicken needs ten more minutes.
+Preheat the oven to four hundred.
+Can you chop the onions for me?
+I'll set the table.
+The rice is almost done.
+We have leftovers in the fridge.
+Help yourself to anything in the kitchen.
+I made cookies, take some to work.
+The cake turned out really well.
+I'm baking bread this weekend.
+Let's have a picnic in the park.
+I'll bring the drinks.
+Can you grab ice on your way?
+I'm going to the farmers market.
+The strawberries look amazing this week.
+We need more fruit for the kids.
+I'll pack you a lunch.
+Do you want a sandwich?
+I'm making breakfast, eggs okay?
+Coffee is ready if you want some.
+I'll have tea instead, thanks.
+Can I get a large iced coffee?
+Let's try the new ramen place.
+The line at the bakery was huge.
+I'm so full I can't move.
+That was delicious, thank you.
+Can I have the recipe?
+I'm allergic to peanuts.
+Is there gluten in this?
+I'm vegetarian, so no meat for me.
+Let's split a dessert.
+Can we get the check, please?
+I'll pay this time.
+Let's split it evenly.
+The tip is already included.
+The pizza is on its way.
+The delivery says thirty minutes.
+I'll heat up the leftovers.
+Don't eat the last slice, it's mine.
+We should go grocery shopping tomorrow.
+I'll make a meal plan for the week.
+The avocados aren't ripe yet.
+The milk smells off.
+Throw out the old yogurt.
+I'll grill burgers on Saturday.
+Do you want cheese on yours?
+Medium rare for me, please.
+Can you light the grill?
+The barbecue starts at four.
+Bring a side dish if you can.
+I'm making my grandmother's soup.
+It's too spicy for me.
+Can you pass the salt?
+Who wants seconds of the pasta?
+I'll do the cooking if you do the dishes.
+Let's eat outside tonight.
+I'm craving something sweet.
+Let's get ice cream after dinner.
+I'll grab bagels for everyone.
+The coffee shop is closed today.
+I'm trying a new recipe tonight.
+Can you defrost the chicken?
+The oven timer just went off.
+
+# Family and kids
+Can you pick up the kids from school today?
+Practice ends at five thirty.
+The kids are watching a movie.
+Did they finish their homework?
+Bedtime is at eight tonight.
+I'll read them a story.
+The baby is finally napping.
+Please keep it quiet, the baby is asleep.
+School is closed tomorrow for the holiday.
+The parent teacher meeting is on Thursday.
+Can you sign the permission slip?
+Don't forget the science project is due Monday.
+I'll drop them off at soccer.
+Can you take them to the birthday party?
+We need a present for the party on Saturday.
+The kids want pancakes for breakfast.
+They're fighting over the remote again.
+Screen time is over for today.
+Let's take the kids to the park.
+I'll pack snacks for the car.
+Are we there yet, asks the back seat.
+Did you put sunscreen on them?
+The little one has a fever.
+I'm keeping her home from school today.
+Can you call the pediatrician?
+He lost another tooth today.
+She learned to ride her bike!
+They loved the zoo.
+I'm so proud of them.
+Grandma wants to video call tonight.
+Call your mother, she misses you.
+Dad is coming for dinner on Sunday.
+My sister is visiting next month.
+Let's plan a family trip this summer.
+The cousins are coming over tomorrow.
+Happy anniversary, I love you.
+I'm picking up flowers for your mom.
+Can you babysit on Friday night?
+The babysitter cancelled, can you stay home?
+I'll handle bedtime tonight.
+You get some rest, I've got this.
+The kids made you a card.
+Thanks for being such a great dad.
+Thanks for everything you do, mom.
+I'll be home in time for dinner.
+Save me a plate, I'm running late.
+Let's have a family movie night.
+Who wants popcorn with the movie?
+The kids need new shoes.
+She grew out of her jacket already.
+We need to book the summer camp.
+The swim lessons start next week.
+I signed them up for piano.
+The recital is at six on Friday.
+Can you record the school play for me?
+I'll be in the front row.
+The bus comes at seven fifteen.
+Make sure they brush their teeth.
+They're asking for a puppy again.
+Maybe we can get a dog next year.
+
+# Friends and plans
+Want to grab dinner this week?
+Are you free on Saturday night?
+Let's get the group together soon.
+I haven't seen you in ages.
+We should catch up over coffee.
+Movie night at my place on Friday?
+I'll bring the snacks.
+Who else is coming?
+Can I bring a friend?
+The party starts at eight.
+Dress code is casual.
+I'll be there around nine.
+Count me in for that!
+Sorry, I can't make it this time.
+Rain check on tonight?
+Let's do it next weekend instead.
+That sounds like so much fun.
+I'm down for whatever.
+Your call, I'm easy.
+Let's play board games.
+Want to come to the concert with us?
+I got two extra tickets.
+The show was sold out.
+Did you watch the game last night?
+What a finish, I couldn't believe it.
+Let's go hiking on Sunday.
+Who's driving us there?
+I can drive if someone gets gas.
+Let's carpool to save parking.
+I'll make a group chat.
+Can you add Alex to the chat?
+Happy birthday, have an amazing year!
+Congrats on the new job!
+That's huge news, well done.
+I'm so happy for you both.
+Let me know if you need anything.
+Thinking of you today.
+I'm here if you want to talk.
+Hope you feel better soon.
+Thanks for listening, it really helped.
+You're the best, seriously.
+I owe you one.
+Drinks are on me tonight.
+Let's toast to the weekend.
+We should do this more often.
+That was the most fun I've had in weeks.
+I laughed so hard my face hurts.
+Send me the photos from last night.
+I look terrible in that picture.
+Can you tag me in the post?
+Let's plan a trip together this year.
+I'm thinking about a road trip.
+Want to split a cabin for the weekend?
+Let's book it before prices go up.
+I'll send you my share.
+Did you get my message?
+Sorry for the slow reply.
+I was out all day.
+Just saw this, what's up?
+Call me when you get a chance.
+I have big news to tell you.
+You won't believe what happened today.
+Guess who I ran into at the store.
+I'll tell you everything later.
+Let's meet halfway between our places.
+How about that cafe near the park?
+I'll grab a table outside.
+It's my treat this time.
+Can't wait to see you!
+Great, see you there soon!
+
+# Travel
+I booked the flights for June.
+Did you check in online yet?
+We need to leave for the airport by six.
+Don't forget your passport.
+I packed too many shoes again.
+Can you weigh my suitcase?
+My bag is over the weight limit.
+The hotel room isn't ready yet.
+Can we get a late checkout?
+The view from the room is incredible.
+The wifi in the hotel is terrible.
+Let's explore the old town today.
+I found a great place for dinner.
+Can you take a picture of us?
+The museum is closed on Mondays.
+Let's rent bikes and ride along the coast.
+The beach is only ten minutes away.
+I got a bit sunburned today.
+The ferry leaves at noon.
+We missed the last train back.
+Let's take a taxi to the hotel.
+How do you say thank you in Spanish?
+Does this place take cards?
+I need to find a cash machine.
+The exchange rate is pretty good right now.
+I'm jet lagged and exhausted.
+I'll sleep on the plane.
+The flight attendant was really kind.
+We're flying over the mountains now.
+The pilot says we're landing early.
+My luggage didn't arrive.
+I'm filing a claim with the airline.
+Getting through customs took forever.
+Our connecting flight is at the other terminal.
+We have to run to make the connection.
+I'll get us a rental car.
+The car rental desk is closed.
+Let's stop for lunch on the way.
+How far is the next gas station?
+The map says two more hours.
+I'll drive the next stretch.
+Let's stay one more night.
+I'm extending my trip by a day.
+The trip was over way too fast.
+I already miss the ocean.
+Back home and unpacking.
+I brought you a little souvenir.
+Next time let's go somewhere warm.
+I want to see the northern lights someday.
+Let's start saving for the big trip.
+The train was so much faster than driving.
+We should've booked the earlier flight.
+Can you recommend a good hotel there?
+I'll send you the itinerary.
+The tour starts at nine sharp.
+The guide was really funny.
+I bought a guidebook for the trip.
+The visa came through, we're going!
+I need a new suitcase before we go.
+Remember to bring a power adapter.
+
+# Shopping and errands
+I'm going to the store, need anything?
+Can you add paper towels to the list?
+The pharmacy closes at nine.
+I'll pick up your prescription.
+I need to return these shoes.
+Do you have the receipt?
+The store didn't have the right size.
+I ordered it online instead.
+It's on sale this week.
+That's way too expensive.
+Let's compare prices before we buy.
+I'm going to the post office.
+Can you mail this letter for me?
+The package was left at the wrong house.
+I need to drop off the dry cleaning.
+The bank opens at nine thirty.
+I have a haircut at two.
+I'll get the car washed today.
+The car needs an oil change.
+The tire pressure light came on.
+I'm taking the car to the mechanic.
+They said it'll be ready tomorrow.
+The repair costs more than I expected.
+I'll stop at the hardware store.
+We need a new extension cord.
+Can you grab batteries while you're out?
+Get the big pack, it's cheaper.
+The checkout line is so long.
+I forgot my bags in the car.
+They're out of the brand you like.
+Should I get something else instead?
+I'll send you a picture, tell me which one.
+I'm returning the library books.
+The books are due on Thursday.
+I picked up the tickets from the box office.
+I need to renew my driver's license.
+The office is only open on weekdays.
+I'm getting a new phone case.
+I need a gift for my coworker.
+Gift cards are always safe.
+Can you wrap the present?
+I bought the wrong size again.
+I'll exchange it this weekend.
+The mall is packed today.
+Let's go early before it gets busy.
+I'll do the errands on my lunch break.
+I got everything on the list.
+They were out of eggs, sorry.
+I found a great deal on a new couch.
+Delivery takes two weeks.
+Can you be home to let the movers in?
+
+# Health and fitness
+I'm going to the gym after work.
+Want to go for a run in the morning?
+I did a five mile run today.
+My legs are so sore from yesterday.
+I'm taking a rest day.
+Let's do yoga on Saturday.
+The class starts at six fifteen.
+I'm trying to get ten thousand steps a day.
+I signed up for a half marathon.
+Let's go for a bike ride.
+I pulled a muscle in my back.
+I need to stretch more.
+I have a doctor's appointment on Tuesday.
+The dentist called to reschedule.
+I think I'm coming down with something.
+I have a really bad headache.
+I'm going to bed early tonight.
+I didn't sleep well last night.
+I need to drink more water.
+I'm cutting back on coffee.
+Can you grab some cough drops?
+I'm feeling much better today.
+The test came back negative.
+I got my flu shot today.
+My arm is sore from the shot.
+I need new glasses.
+I booked an eye exam.
+My knee has been bothering me.
+I'm seeing a physical therapist.
+I'm going for a swim at lunch.
+The pool is closed for cleaning.
+I'm trying to eat more vegetables.
+I've been meditating every morning.
+It really helps me focus.
+I'm going for a long walk to clear my head.
+Let's take the stairs instead.
+I'm taking a mental health day.
+I need a vacation.
+I'm finally getting some rest.
+I feel like a new person.
+Let's work out together this week.
+My trainer is brutal.
+I lifted heavier than ever today.
+I'm going to sleep in tomorrow.
+The allergies are terrible this season.
+I'm out of allergy medicine.
+I need to make a doctor's appointment.
+I'm on antibiotics for a week.
+Remember to take your vitamins.
+I'll pick up some ibuprofen.
+
+# Weather and outdoors
+It's pouring rain outside.
+Bring a jacket, it's chilly tonight.
+It's supposed to snow this weekend.
+The sun finally came out.
+It's a perfect day for the beach.
+It's way too humid today.
+There's a storm coming this afternoon.
+The power might go out with this wind.
+The roads are flooded near the river.
+School might close because of the snow.
+It's below freezing this morning.
+Scrape the ice off the windshield.
+I love this time of year.
+The leaves are turning already.
+The cherry blossoms are out.
+Let's sit outside while it's nice.
+It's too hot to do anything.
+I'm staying inside with the air conditioning.
+The forecast says sunny all week.
+Grab the umbrella by the door.
+I got completely soaked walking home.
+There's a rainbow over the lake!
+The sunset tonight is amazing.
+Let's go see the stars tonight.
+It's really foggy on the highway.
+The pollen count is high today.
+Wear sunscreen, it's really strong today.
+The snow is perfect for sledding.
+Let's build a snowman with the kids.
+It's finally warm enough for shorts.
+The wind is crazy today.
+A tree fell on the road.
+The lake is frozen solid.
+Let's go camping when it warms up.
+I'll check the weather before we go.
+It's going to be a long winter.
+Spring can't come soon enough.
+Let's walk by the river.
+The trail is muddy after the rain.
+Watch out for the ice on the steps.
+
+# Replies and reactions
+Sounds good, ship it.
+That works for me.
+Perfect, thank you so much.
+Got it, I'll take care of it.
+No worries at all.
+Totally understand, don't stress about it.
+Yes, absolutely, let's do it.
+I'm not sure, let me check.
+Let me get back to you on that.
+I'll think about it and let you know.
+That's a great idea.
+I love it, nice work.
+Wow, that's amazing news.
+Oh no, I'm so sorry to hear that.
+That sounds really frustrating, I'm sorry.
+Fingers crossed it works out.
+Good luck today, you've got this!
+Well done, you earned it.
+Thank you, that means a lot.
+You're welcome, any time.
+Happy to help with that.
+It was my pleasure, really.
+Sorry about that, my mistake.
+I didn't mean to upset you.
+Can we talk about it later?
+I need a little time to think.
+Fair enough, you're right.
+I see your point.
+I'm not sure I agree.
+Let's agree to disagree.
+That's absolutely hilarious, thanks for sharing.
+I can't stop laughing.
+That's so sweet of you.
+You made my day.
+Same here, to be honest.
+Me too, I've been meaning to say that.
+Good question, I don't know.
+I have no idea, sorry.
+Maybe, it depends on the weather.
+Probably not this week.
+Definitely, count me in.
+Not today, but maybe tomorrow.
+Okay, I'll be there.
+Alright, see you soon.
+Cool, thanks for letting me know.
+Noted, thanks for the reminder.
+Will do, I'll handle it.
+Of course, no problem.
+Sure thing, give me a minute.
+Yes please, that would help a lot.
+No thanks, I'm all set.
+I'm good, thanks for asking.
+Let's just go with your plan.
+Whatever you think is best.
+I trust your judgment.
+Honestly, either one is fine.
+Hold on, I need to check something.
+Wait, what happened after that?
+Are you serious right now?
+I can't believe it.
+That's a wild story.
+That makes total sense now.
+Ah, now I get it.
+Thanks for the heads up.
+Good to know, thanks.
+I'll keep that in mind.
+Noted, I'll fix it.
+Done, it's all sorted.
+All finished, anything else?
+That should do it.
+Let me know if that works.
+I hope that helps a little.
+Talk to you soon.
+Speak to you tomorrow.
+Have a great day!
+Enjoy the rest of your weekend!
+Safe travels, text me when you land.
+Go get some rest tonight.
+Sleep well and sweet dreams.
+Take care of yourself.
+I miss you already.
+Love you, see you tonight.
+
+# Money and admin
+I paid the rent this morning.
+Can you send me your half of the bill?
+I sent you the money for dinner.
+Did the payment go through?
+My card got declined.
+I need to call the bank.
+There's a charge I don't recognize.
+I'll cancel that subscription.
+We're paying too much for internet.
+Let's set a budget for the month.
+I'm saving up for a new laptop.
+The tax forms are due next month.
+I need to find last year's return.
+Can you scan the receipts for me?
+I'll file the insurance claim.
+The insurance renewal came in the mail.
+Our lease is up in June.
+Should we renew the lease or move?
+I filled out the application.
+They need a copy of my ID.
+I'll print the forms tonight.
+Where do I sign?
+Can you notarize this document?
+The appointment is at the city office.
+I'm on hold with customer service.
+They put me on hold for an hour.
+The refund should arrive next week.
+I got a parking ticket.
+I'll pay the ticket online.
+The bill is due on Friday.
+Let's set up automatic payments.
+I moved some money into savings.
+Payday is on Thursday.
+Can you lend me twenty dollars?
+I'll pay you back tomorrow.
+Please keep the change.
+I'll get the next round.
+Let's track our spending this month.
+The gym membership renews in April.
+I need to update my address.
+My new card arrived today.
+I forgot my pin number again.
+The account is locked, I'm calling them.
+I'll check my statement tonight.
+We got a letter from the bank.
+The check from the tenant bounced.
+I deposited the check this morning.
+The quote came in under budget.
+Let's get three quotes before we decide.
+I'll ask for a receipt.
+
+# Phones and gadgets
+My phone screen cracked.
+Can you send me that photo?
+I'll text you the details.
+My battery is at five percent.
+Do you have a charger I can borrow?
+I'm getting a new phone this week.
+The headphones won't connect.
+Can you turn the volume down?
+I'll set an alarm for six.
+Remind me in an hour.
+My calendar didn't sync.
+I can't log in to my account.
+The app keeps asking for a code.
+I'll update the app tonight.
+The tv remote is missing again.
+Can you put the game on?
+Let's watch something funny tonight.
+What are you watching these days?
+I'm three episodes into that new show.
+No spoilers please, I'm not caught up!
+I'll download the movie for the flight.
+The speaker is out of battery.
+Play some music while we cook.
+Turn it up, I love this song.
+Can you make a playlist for the trip?
+The smart lights stopped working.
+I'll reset the doorbell camera.
+The printer is out of ink.
+Can you print two copies for me?
+I'll scan it and email it to you.
+My email is full of spam.
+I unsubscribed from all those newsletters.
+Can you send me the password?
+I'll set up the new router.
+The wifi name changed.
+My watch says I walked eight miles.
+Let's take a selfie.
+The photo is a bit blurry.
+I backed up all the photos.
+The cloud storage is full.
+
+# Weekends and hobbies
+What are your plans for the weekend?
+I'm doing absolutely nothing this weekend.
+I finally finished that book.
+Can you recommend a good podcast?
+I started learning the guitar.
+My fingers hurt from practicing.
+I'm painting the fence on Saturday.
+Let's go to the farmers market in the morning.
+I'm trying to learn Italian.
+I signed up for a pottery class.
+The bowl I made is a little crooked.
+Let's do a puzzle tonight.
+I'm knitting a scarf for winter.
+We should start a book club.
+I'm reading a mystery novel right now.
+I couldn't put it down last night.
+Let's go to the museum on Sunday.
+There's a new exhibit opening.
+I'm taking photos at the park.
+The light is perfect right now.
+I'm building a little shelf in the garage.
+I planted some herbs on the balcony.
+The basil is growing really fast.
+Let's go fishing at the lake.
+I'm practicing my chess openings.
+Want to play a game online later?
+I'm on level fifty now.
+We lost the trivia night by one point.
+Let's go to trivia again next week.
+I'm baking a pie for the fair.
+Let's see a live band this weekend.
+The tickets go on sale at ten.
+I'm going to the game on Sunday.
+Our team finally won!
+That referee made a terrible call.
+I'm watching the race this afternoon.
+I joined a running club.
+The club meets on Tuesday evenings.
+Let's go skating at the rink.
+I'm learning to cook Korean food.
+The weekend went by way too fast.
+I need a weekend to recover from my weekend.
+
+# Checking in
+How are you holding up?
+How did the interview go?
+How was your day?
+How's the new job going?
+Did you get some sleep?
+Are you feeling any better?
+How's your mom doing?
+Just checking in on you.
+Haven't heard from you, everything okay?
+How was the doctor's appointment?
+Did the exam go well?
+How was the first day at school?
+How's the new apartment?
+How did the move go?
+Are you settling in okay?
+Is everything alright at home?
+How's the weather over there?
+What did the vet say?
+Did you hear back about the job?
+Any news on the house?
+How was the wedding?
+How's the baby doing?
+Are you still coming tonight?
+Are you still awake?
+Did you make it home okay?
+Did you eat yet?
+What are you up to?
+Do you need anything from me?
+How can I help?
+Is there anything I can do?
+
+# Dates, times and reminders
+Remind me to call the bank tomorrow.
+Don't forget the meeting at nine.
+The appointment is at quarter past three.
+Let's say Tuesday at ten.
+I'm free after six on weekdays.
+Can we do the twentieth instead?
+Mark your calendar for the third.
+The party is next Saturday, not this one.
+We fly out on the fifteenth.
+The library closes early on Sundays.
+Trash pickup moved to Thursday this week.
+Daylight saving time ends this weekend.
+Set the clocks back an hour tonight.
+It's been a whole year already.
+Let's meet again in two weeks.
+I'll check in with you on Friday.
+Every Monday at nine works for me.
+The store opens at seven tomorrow.
+The deadline is midnight tonight.
+We have until the end of the month.
+That gives us about three weeks.
+I need two more days to finish.
+Let's set a reminder for next spring.
+Your subscription renews on the first.
+The warranty expires in December.
+The contract ends in two years.
+I'll be gone from the tenth to the twentieth.
+The office is closed between the holidays.
+Let's aim for early next week.
+Same time next week?
+
+# Holidays and occasions
+Happy new year to you and your family!
+Merry Christmas, enjoy the time off.
+Happy holidays from all of us.
+Have a wonderful Thanksgiving.
+What are you doing for the holidays?
+We're hosting dinner this year.
+Who's bringing the turkey?
+I'll make the mashed potatoes.
+The decorations are going up this weekend.
+Let's get the tree on Saturday.
+I still need to wrap the presents.
+I finished all my holiday shopping.
+Happy graduation, we're so proud of you!
+Congratulations on the baby!
+Welcome to the world, little one.
+Wishing you all the best on your big day.
+Happy retirement, enjoy every minute.
+Happy Mother's Day, thank you for everything.
+Happy Father's Day, love you dad.
+Happy Valentine's Day to my favorite person.
+Let's do something special for your birthday.
+Should we throw a surprise party?
+Don't tell her about the surprise.
+I ordered the cake for Saturday.
+The fireworks start at nine.
+Let's watch the parade downtown.
+Trick or treating starts at six.
+The kids picked out their costumes.
+We're carving pumpkins tonight.
+Have a happy and safe holiday weekend.
+
+# Around town
+The new cafe on the corner just opened.
+There's construction on Main Street again.
+The road by the school is closed.
+They're building apartments where the park was.
+Have you tried the new bakery downtown?
+The farmers market moved to Saturdays.
+The library has a used book sale this week.
+There's a street fair this weekend.
+Parking downtown is impossible on Fridays.
+The bus route changed last week.
+The bike lane is finally finished.
+The pool opens on Memorial Day.
+There's a concert in the park on Thursday.
+The movie theater has cheap tickets on Tuesday.
+The gym is less busy in the morning.
+The post office has a new location.
+The coffee here is the best in town.
+They closed the old bookstore.
+The neighborhood meeting is on Wednesday.
+Someone left a box of free books outside.
+
+# Longer messages
+I'm running late because the train broke down, so please start without me.
+Can you send me the latest version of the contract before our call this afternoon?
+Let's meet at the coffee shop near your office around ten tomorrow morning.
+I finally finished the report, so I'm taking the rest of the afternoon off.
+Thanks again for dinner last night, the food was incredible.
+I'll pick up the groceries on my way home if you send me the list.
+The kids have a half day on Friday, so someone needs to be home.
+Could you remind me to call the insurance company when I get back from lunch?
+We're thinking about driving up to the lake next weekend if the weather holds.
+I just got off the phone with the landlord and he's fixing the heater tomorrow.
+Please let everyone know that the meeting has moved to the big conference room.
+I can't find the charger anywhere, did you take it to work by mistake?
+If you get there before me, put our names down for a table outside.
+I'm going to take the dog for a long walk before it starts raining.
+The flight lands at nine, so I should be home by eleven at the latest.
+Can you check whether the store is open late tonight before I drive over?
+I left the spare key with the neighbors in case you get home before me.
+Let's push the launch a week so we can fix the last bugs.
+I really enjoyed working with you on this project.
+I'll be flying most of tomorrow, so text me if anything comes up.
+Don't worry about the mess, I'll clean it up as soon as I get home.
+Just wanted to say thank you for all your help with the move last weekend.
+The doctor wants to see me in two weeks, but it's nothing serious.
+Could you grab my jacket from the dry cleaner on your way back?
+I think we should sell the old car and just keep the one we have.
+The concert was amazing, they played every song I wanted to hear.
+We should invite your brother and his wife over for dinner sometime soon.
+I'm sorry I snapped at you earlier, it's been a really long day.
+Can you make sure the back door is locked before you go to bed?
+If the package arrives while I'm out, just leave it inside the front door.
+I booked us a table at the Italian place for seven thirty on Friday.
+The heating bill was much higher this month, so let's keep the thermostat lower.
+I'm going to work from the cafe today because the internet at home is down.
+Let me know what time works for you and I'll book the meeting room.
+We still need to decide who's bringing what to the picnic on Sunday.
+I've been thinking about what you said and I think you're right.
+My mom is coming to stay with us for a week starting on Tuesday.
+Can you pick up a birthday card for your sister when you're at the store?
+I'm heading to bed now, see you in the morning.
+Remember to bring your passport and a copy of the hotel booking.
+
+# Short notes
+Back in five minutes, hang on.
+Call me when you can.
+I'm almost done here.
+On the phone right now.
+Can you text me instead?
+Busy right now, call you later.
+Free to talk now?
+Give me ten minutes.
+I'm coming down right now.
+I'll be right there.
+Leaving the house now.
+Home safe, good night.
+I just woke up, sorry.
+I'm heading to bed now.
+Out for a run.
+At the store now.
+I'm still at work, unfortunately.
+Stuck in a meeting.
+Want to get lunch at noon?
+Coffee in ten minutes or so?
+Ready when you are.
+Let's go now before it's late.
+All good here, thanks for checking.
+Nothing new with me, how about you?
+Long day, so tired.
+Finally home after a long day.
+Made it there, thanks for the directions.
+I got your message just now.
+I saw it, thanks for sending.
+I'm on it right now.
+
+# Questions
+What time do you get off work?
+Where did you park the car?
+Who's picking up the kids today?
+Which one do you like better?
+How much did that cost?
+When does the store close?
+Why is the light still on?
+What's the plan for tonight?
+Did anyone call while I was out?
+Have you seen the remote?
+Do we need anything from the store?
+Is the dishwasher clean or dirty?
+Can you hear the doorbell from upstairs?
+Should I wear a jacket?
+What should I bring to the party?
+Is it okay if I bring my dog?
+How long will the repair take?
+Where's the nearest pharmacy?
+Do you know a good plumber?
+Can you recommend a good dentist?
+What's the best way to get downtown?
+Is there a bathroom nearby?
+Does anyone have a pen?
+Do you want to split a cab?
+Can I borrow your umbrella?
+What are we having for dessert?
+Where should we go on vacation this year?
+How many people are coming?
+Who's hosting this year?
+What did the teacher say?
+How do I turn this thing on?
+Where do you keep the extra blankets?
+What's the name of that restaurant we liked?
+Did you remember to call your sister?
+Are we still on for tomorrow?
+Do you want to come with me?
+Can we talk tonight?
+What time is it there?
+Should I book it now or wait?
+Is this seat taken?
+
+# Feelings and moods
+I'm really excited about this weekend.
+I'm a bit nervous about the interview.
+I'm so tired I could sleep for a week.
+Today was a really good day.
+I've had a rough week.
+I'm feeling a lot more relaxed now.
+I'm frustrated with how this went.
+I'm so grateful for you.
+I feel terrible about missing your party.
+I'm bored, entertain me.
+I'm in a great mood today.
+I'm stressed about the deadline.
+I need a break from screens.
+I'm really looking forward to seeing you.
+I'm a little homesick.
+I'm proud of how far we've come.
+I'm happy we talked it through.
+I feel much better after that walk.
+I'm overwhelmed with everything this week.
+I'm relieved it's finally over.

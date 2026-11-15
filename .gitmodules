@@ -1,0 +1,6 @@
+[submodule "ml/third_party/usr2"]
+	path = ml/third_party/usr2
+	url = https://github.com/ahaliassos/usr2
+[submodule "ml/third_party/auto_avsr"]
+	path = ml/third_party/auto_avsr
+	url = https://github.com/mpc001/auto_avsr

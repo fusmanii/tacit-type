@@ -1,7 +1,7 @@
 DERIVED := build/DerivedData
 XCB := xcodebuild -workspace TacitType.xcworkspace -derivedDataPath $(DERIVED) CODE_SIGNING_ALLOWED=NO
 
-.PHONY: generate open run run-signed run-ios build build-mac build-ios test test-swift test-python ml-env clean
+.PHONY: generate open run run-signed run-ios build build-mac build-ios test test-swift test-python ml-env ml-models clean
 
 generate:
 	xcodegen generate --use-cache
@@ -49,9 +49,16 @@ test: test-swift test-python
 test-swift:
 	swift test --package-path Packages/TacitKit
 
+# Python environment for the loader, the lip-reading models and their tests. Fetches the model
+# repos (git submodules) too. Checkpoints are separate: `make ml-models`.
 ml-env:
+	git submodule update --init
 	python3 -m venv ml/.venv
-	ml/.venv/bin/pip install -e 'ml[dev]'
+	ml/.venv/bin/pip install -e 'ml[dev,models]'
+
+# Downloads the Phase A checkpoints into ~/Library/Application Support/TacitType/models/lipreading.
+ml-models:
+	cd ml && .venv/bin/python -m silentml.models download usr2-large auto-avsr
 
 test-python:
 	cd ml && .venv/bin/pytest

@@ -1,6 +1,6 @@
 # Tacit Type
 
-The spec is docs/SPEC.md. Work one milestone at a time in the order it lists. M0 to M3 are built. M3b (mouth video) and M4 (dictation) are written and their tests pass, but their acceptance checks still need a real iPhone. M5 is next.
+The spec is docs/SPEC.md. Work one milestone at a time in the order it lists. M0 to M3 are built. M3b (mouth video) and M4 (dictation) are written and their tests pass, but their acceptance checks still need a real iPhone. M5 is split into M5a to M5e in the spec. M5a (the model harness) is built. M5b, the Phase A baseline, needs one recorded sitting and the checkpoints.
 
 Step 3 is silent dictation from mouth video. The old command classifier design is gone.
 
@@ -8,6 +8,7 @@ Step 3 is silent dictation from mouth video. The old command classifier design i
 
 - `make generate` regenerates TacitType.xcodeproj from project.yml. Never edit the .xcodeproj by hand.
 - `make test-swift` runs TacitKit tests. `make test-python` runs the ml tests.
+- `make ml-env` fetches the model submodules and builds ml/.venv. `make ml-models` downloads the Phase A checkpoints.
 - `make build` builds both apps without signing.
 - `make run-signed` builds and opens the Mac app signed with your team, so the Accessibility grant survives rebuilds.
 
@@ -17,4 +18,5 @@ Step 3 is silent dictation from mouth video. The old command classifier design i
 - Anything shared with Python has a mirror in ml/silentml and a parity test. Today that is the blendshape order, the face record dtype, the crop landmark order, the mouth.bin layout, the version constants, the transcript.json fields and the session folder format.
 - `Constants.lipVertexIndices` and the blendshape order are frozen once Step 1 data exists. Any change bumps `featureSchemaVersion`.
 - The session fixture in ml/tests/fixtures is written by the Swift tests. After a format change run `TACIT_WRITE_FIXTURE=1 make test-swift`, then update ml/tests/test_data.py.
+- ml/third_party holds the two model repos as pinned submodules. Don't edit them. Wrap them in silentml instead. They share package names, so load only one repo per Python process.
 - Swift 6 strict concurrency, macOS 15 and iOS 18 minimums, Apple silicon only.
