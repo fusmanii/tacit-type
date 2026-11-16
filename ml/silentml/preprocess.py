@@ -9,13 +9,18 @@ to each model's own alignment code (`VideoProcess` in each repo), so the crop ma
 Steps, in order:
 1. `uniform_indices` puts the frames on an even 25 fps grid, repeating a frame where one dropped.
 2. `ibug_landmarks` maps the 12 points to a 68-point array, after `is_mirrored` checks handedness.
+   An `AlignmentCorrection`, when one has been fitted, then moves the 8 alignment points.
 3. The model's `VideoProcess` aligns each frame to the mean face and cuts a 96x96 mouth patch.
 4. `model_input` scales to 0 ... 1, takes the centre 88x88 and normalises (mean 0.421, std 0.165).
 """
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
 
 import numpy as np
 
@@ -45,6 +50,7 @@ IBUG_INDEX = {
     "chin": 8,
 }
 _SLOT = {name: i for i, name in enumerate(CROP_LANDMARK_ORDER)}
+_IBUG_MOUTH = (48, 51, 54, 57)  # the mouth points that hold real landmarks
 _MOUTH_SLOTS = [_SLOT[n] for n in ("mouthCornerLowX", "mouthCornerHighX", "upperLipCentre", "lowerLipCentre")]
 
 MODEL_CROP = 88
@@ -52,6 +58,7 @@ PIXEL_MEAN = 0.421
 PIXEL_STD = 0.165
 # Both repos' VideoProcess skip a clip shorter than their 12-frame smoothing window.
 MIN_FRAMES = 12
+CORRECTION_VERSION = 1
 
 
 class PreprocessError(ValueError):
@@ -121,11 +128,75 @@ def ibug_landmarks(landmarks: np.ndarray) -> list[np.ndarray | None]:
     return out
 
 
+@dataclass(frozen=True)
+class AlignmentCorrection:
+    """A fixed shift of the 8 alignment points, so ARKit's points land where iBUG's would.
+
+    ARKit's mesh points don't sit exactly where the iBUG annotators put theirs, and the iPhone
+    looks at the face from below. Both show up as the same offset from the mean face on every
+    frame. `cropcheck --fit` measures the mean offset of each aligned point and saves it. `apply`
+    takes it back out: it maps each frame's offsets into crop pixels through that frame's own
+    alignment and subtracts them, then resets the filler mouth points so the patch stays centred
+    on the same mouth centre. It is fitted from landmarks only, never from labels.
+    """
+
+    offsets: np.ndarray  # [8, 2] mean offset of our aligned STABLE_POINTS from the mean face's, aligned pixels
+    reference: np.ndarray  # [8, 2] the mean face's STABLE_POINTS in the aligned frame
+    meta: dict | None = None  # where it was fitted from, for the record
+
+    @classmethod
+    def fit(cls, residuals: np.ndarray, reference: np.ndarray, **meta) -> "AlignmentCorrection":
+        """residuals is [frames, 8, 2], as `cropcheck.residuals` returns them for uncorrected landmarks."""
+        residuals = np.asarray(residuals, dtype=np.float64).reshape(-1, len(STABLE_POINTS), 2)
+        return cls(residuals.mean(axis=0), np.asarray(reference, dtype=np.float64),
+                   {"frames": int(len(residuals)), **meta})
+
+    def apply(self, points: np.ndarray) -> np.ndarray:
+        """A corrected copy of one frame's [68, 2] landmarks."""
+        import cv2
+
+        stable = list(STABLE_POINTS)
+        # The same similarity fit the repos' VideoProcess uses to align a frame.
+        transform = cv2.estimateAffinePartial2D(points[stable].astype(np.float32),
+                                                self.reference.astype(np.float32), method=cv2.LMEDS)[0]
+        if transform is None:
+            return points
+        to_crop = np.linalg.inv(transform[:, :2])
+        centre = points[list(MOUTH_POINTS)].mean(axis=0)
+        out = np.array(points, dtype=np.float64, copy=True)
+        out[stable] = points[stable] - self.offsets @ to_crop.T
+        real = list(_IBUG_MOUTH)
+        filler = [i for i in MOUTH_POINTS if i not in real]
+        out[filler] = (len(MOUTH_POINTS) * centre - out[real].sum(axis=0)) / len(filler)
+        return out
+
+    def save(self, path: Path | str) -> None:
+        record = {
+            "version": CORRECTION_VERSION,
+            "createdAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "points": list(STABLE_POINTS),
+            "offsets": self.offsets.round(4).tolist(),
+            "reference": self.reference.round(4).tolist(),
+            **(self.meta or {}),
+        }
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        Path(path).write_text(json.dumps(record, indent=2) + "\n")
+
+    @classmethod
+    def load(cls, path: Path | str) -> "AlignmentCorrection":
+        record = json.loads(Path(path).read_text())
+        if record.get("version") != CORRECTION_VERSION or record.get("points") != list(STABLE_POINTS):
+            raise PreprocessError(f"{path} is not a version {CORRECTION_VERSION} alignment correction. Refit it with cropcheck --fit.")
+        meta = {"file": str(path), **{k: v for k, v in record.items() if k not in ("version", "points", "offsets", "reference")}}
+        return cls(np.array(record["offsets"]), np.array(record["reference"]), meta)
+
+
 def mouth_rois(
     frames: np.ndarray,
     timestamps: np.ndarray,
     landmarks: np.ndarray,
     video_process: Callable[[np.ndarray, list], np.ndarray | None],
+    correction: AlignmentCorrection | None = None,
 ) -> np.ndarray:
     """Aligned 96x96 uint8 mouth patches, one per 25 fps tick.
 
@@ -141,7 +212,10 @@ def mouth_rois(
         raise PreprocessError(f"clip has {len(frames)} frames, the models need at least {MIN_FRAMES}")
     if is_mirrored(landmarks):
         frames, landmarks = mirror(frames, landmarks)
-    rois = video_process(frames, ibug_landmarks(landmarks))
+    points = ibug_landmarks(landmarks)
+    if correction is not None:
+        points = [None if p is None else correction.apply(p) for p in points]
+    rois = video_process(frames, points)
     if rois is None:
         raise PreprocessError("the model's VideoProcess rejected the clip")
     return np.asarray(rois, dtype=np.uint8)

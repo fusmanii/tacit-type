@@ -49,3 +49,38 @@ def test_row_draws_three_tiles():
     vp = usr2_video_process()
     tiles = row(vp, mean_face_session(vp))
     assert tiles.shape == (256, 3 * 256, 3) and tiles.dtype == np.uint8
+
+
+def test_a_fitted_correction_removes_a_consistent_offset(tmp_path):
+    from silentml.cropcheck import _prepared, _stable_reference, residuals, summary
+    from silentml.preprocess import AlignmentCorrection
+
+    vp = usr2_video_process()
+    shifted = _prepared(mean_face_session(vp, shift_corners=12.0))
+    correction = AlignmentCorrection.fit(residuals(vp, *shifted), _stable_reference(vp), takes=1)
+    correction.save(tmp_path / "correction.json")
+    loaded = AlignmentCorrection.load(tmp_path / "correction.json")
+    after = summary(residuals(vp, *shifted, loaded))
+    assert after["max_mean_offset_px"] < 0.5
+    assert not after["systematic_shift"]
+
+
+def test_main_fits_saves_and_reports_the_correction(tmp_path, monkeypatch):
+    import json
+
+    from silentml import cropcheck, evaluate, models
+
+    vp = usr2_video_process()
+    session = mean_face_session(vp, shift_corners=12.0)
+    session.manifest.update({"sittingId": "S1", "promptText": "the birch canoe"})
+    monkeypatch.setattr(models, "video_process", lambda name: vp)
+    monkeypatch.setattr(evaluate, "sentence_takes", lambda root, sittings=None: iter([session]))
+    monkeypatch.setenv("TACIT_MODEL_DIR", str(tmp_path / "models"))
+
+    cropcheck.main(["--data", str(tmp_path), "--model", "usr2-large", "--out", str(tmp_path / "out"), "--fit"])
+    saved = json.loads(models.correction_path().read_text())
+    assert saved["sittings"] == ["S1"] and saved["takes"] == 1
+    result = json.loads((tmp_path / "out" / "usr2-large.json").read_text())
+    assert result["raw"]["systematic_shift"]
+    assert result["corrected"]["max_mean_offset_px"] < 0.5
+    assert result["correction"] == str(models.correction_path())

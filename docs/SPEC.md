@@ -418,7 +418,7 @@ What this means for Tacit Type:
 
 - In the reference face the mouth is 45 px wide, so the 96 px crop spans about 2.1 mouth widths. The iPhone crop puts 64 px across the mouth (3 × mouth width in 192 px). That leaves enough resolution, plus room for the alignment rotation.
 - Don't run the models' MediaPipe or RetinaFace detectors on the iPhone crop. The eyes sit about 1.4 mouth widths above the mouth centre, right at the crop's edge, so detection would be unreliable. Instead, `silentml.preprocess` maps the `mouth.bin` landmarks onto the 68-point indices above and passes them in. Auto-AVSR's `AVSRDataLoader.load_data` already accepts precomputed landmarks.
-- ARKit mesh points don't sit exactly where the iBUG annotations do. Phase A's side-by-side crop check is how to catch a systematic shift. If one shows up, fit a fixed correction from the 12 ARKit points to the mean face once.
+- ARKit mesh points don't sit exactly where the iBUG annotations do. Phase A's side-by-side crop check is how to catch a systematic shift. If one shows up, fit a fixed correction from the 12 ARKit points to the mean face once. One did, and M5b added it.
 - USR 2.0 decodes with beam 40 and CTC weight 0.1 by default. Phase C's beam of 10–20 trades accuracy for latency, so measure both in Phase A.
 
 | Set | Amount | Your time | Purpose |
@@ -462,7 +462,7 @@ If silent WER is above \~90%, fix preprocessing (crop size, alignment, frame rat
 
 - Both repos are git submodules in `ml/third_party`. USR 2.0 is pinned to `e9e9c94` (Sep 9, 2026) and Auto-AVSR to `182b628` (Jan 8, 2025). `make ml-env` fetches them and installs the `models` extra. Python 3.14 with torch 2.15 works, so there is no older Python to pin.
 - USR 2.0 ships no fine-tuning code for visual speech. Its `main.py` only evaluates, and its CTC module has no loss function. Auto-AVSR has a working `train.py` that starts from a pretrained checkpoint. Phase B therefore either writes a training loop around USR 2.0 or fine-tunes Auto-AVSR. Decide once Phase A shows which model reads you better.
-- Checkpoints come from the authors' Google Drive links. `make ml-models` downloads USR 2.0 Large (high-resource, 21.5% WER) and Auto-AVSR into `~/Library/Application Support/TacitType/models/lipreading`. Auto-AVSR's file is checked against the MD5 prefix in its README. USR 2.0 publishes no hash, so the download prints a SHA-256 to record. Checkpoints load with `weights_only=True`, so a tampered file can't run code.
+- Checkpoints come from the authors' Google Drive links. `make ml-models` downloads USR 2.0 Large (high-resource, 21.5% WER), USR 2.0 Huge (17.6%) and Auto-AVSR into `~/Library/Application Support/TacitType/models/lipreading`. Auto-AVSR's file is checked against the MD5 prefix in its README. USR 2.0 publishes no hash, so the download prints a SHA-256 to record. Checkpoints load with `weights_only=True`, so a tampered file can't run code.
 - `silentml.models.load(name)` returns a reader with `preprocess(session)` and `nbest(clip, n=5)`. Both repos name their packages the same way (`espnet` and others), so one process can load only one repo. `evaluate` runs one model per call for this reason.
 - The n-best list is the beam search's own sorted list of finished hypotheses, with repeated texts removed. Neither repo's code needed changing for it.
 - ESPnet's batched CTC scorer only knows CUDA or CPU. On a Mac the encoder runs on the GPU (MPS) and the beam search runs on the CPU.
@@ -473,6 +473,36 @@ If silent WER is above \~90%, fix preprocessing (crop size, alignment, frame rat
 - `python -m silentml.evaluate` writes `runs/<name>/metrics.json` and a per-take file. It reports WER, CER and an n-best oracle WER, which is the best any reranking could reach. Test-set prompts are left out unless `--test-set` is passed. The model's share of the 2.5 s budget is 1.3 s for a 5 s clip, once the 350 ms tail, 800 ms of LLM cleanup and 50 ms of insertion are taken out. The choice in `metrics.json` follows the Phase A rule.
 - Phase A needs no special block. One normal training sitting records 50 sentences aloud and the same 50 silently.
 - Apple's on-device model was checked on macOS 27.2 with Xcode 27.2. Its first call took 1.5 s and the next took 0.26 s, so M5c must prewarm it at launch. The same goes for M4's punctuation polish.
+
+### Phase A details settled in M5b
+
+- The checkpoints' SHA-256 prefixes, downloaded Nov 15, 2026, are `539e955f` for USR 2.0 Large (4.05 GB), `42aef587` for Huge (7.60 GB) and `fbf7cd70` for Auto-AVSR (1.00 GB). Auto-AVSR also matched its README's MD5 prefix.
+- USR 2.0's default `maxlenratio` of 1.0 turns off ESPnet's end detection, so the beam search ran one step per video frame. `silentml` uses 0 instead, which keeps the same length cap. On real takes the n-best list was unchanged and decoding was 3.5 to 4.5 times faster. Auto-AVSR already decoded this way.
+- The encoder takes about 50 ms on MPS for a 3 s clip. Nearly all the time is the beam search on the CPU.
+- The 5 s clip time fits a line through the takes' timings only with at least 10 takes and a positive slope. Otherwise it scales the median time per video second, which errs slow.
+- The baseline sitting (`9C946160`, Nov 15, 2026) ended after 10 aloud and 10 silent sentences rather than 50 each. The silent block reshuffles all 50 sentences, so only 2 of the 10 silent prompts match an aloud one. Its sync check failed at −45.6 ms, which is audio against video and doesn't touch lip-reading.
+
+Phase A results on that sitting (about 80 words per style, so a few points either way is noise):
+
+| Model | Beam | Aloud WER | Silent WER | Silent CER | Silent n-best oracle | 5 s clip | Fits 1.3 s |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| **Auto-AVSR, corrected** | **10** | **53.7%** | **62.4%** | **41.8%** | **44.7%** | **0.63 s** | **Yes** |
+| Auto-AVSR, corrected | 40 | 53.7% | 62.4% | 42.5% | 49.4% | 1.48 s | No |
+| Auto-AVSR | 40 | 55.2% | 63.5% | 42.8% | 44.7% | 1.52 s | No |
+| Auto-AVSR | 10 | 55.2% | 68.2% | 44.7% | 50.6% | 0.63 s | Yes |
+| USR 2.0 Huge | 40 | 61.2% | 74.1% | 49.0% | 57.6% | 4.75 s | No |
+| USR 2.0 Huge | 10 | 61.2% | 74.1% | 49.0% | 56.5% | 1.89 s | No |
+| USR 2.0 Large | 40 | 65.7% | 75.3% | 53.6% | 67.1% | 3.58 s | No |
+| USR 2.0 Large | 10 | 65.7% | 76.5% | 54.1% | 71.8% | 1.49 s | No |
+
+- The uncorrected rows came first. The corrected rows use the alignment correction described below.
+- Every silent WER is well under 90%, so preprocessing works. **Phase A picks Auto-AVSR at beam 10, with the alignment correction.** It reads best aloud and silent, it is the only model inside the budget, and its repo has working fine-tuning code. More takes wouldn't change the pick, because neither USR 2.0 model fits the budget even at beam 10.
+- Its errors are mostly near misses of the kind Phase C's cleanup is for, such as "a small cricket across the field" for "a small creek cut across the field".
+- Without the correction, beam 40 was 4.7 points better on silent takes. With it, beam 40 and beam 10 tie, so beam 10 gives up nothing.
+- The crop check put the nose base point (iBUG 33) 13 px below the mean face's, the nose bridge (28) 11 px above it, and both mouth corners 4 to 5 px inside it, with spreads near 1 px. The phone looks up from below the chin, which likely explains most of it. The 96 px patch still puts the lips on the mean face's lip outline.
+- `silentml.preprocess.AlignmentCorrection` takes the offset out. It shifts each frame's 8 alignment points by the mean offset, mapped back into crop pixels through that frame's own alignment, and keeps the mouth centre where it was. It is fitted from landmarks only, never labels, so fitting and scoring on the same takes leaks nothing. On the baseline sitting it cut the largest mean offset from 13.1 px to 0.1 px. Auto-AVSR at beam 10 went from 68.2% to 62.4% silent and from 55.2% to 53.7% aloud. In a test run, USR 2.0 Huge went from 61.2% to 50.7% aloud and stayed at 74.1% silent.
+- `python -m silentml.cropcheck --fit` saves the correction as `alignment_correction.json` next to the checkpoints. `models.load` applies it whenever the file is there. `evaluate` records which file it used and takes `--no-correction` to turn it off. `cropcheck` reports offsets before and after the correction.
+- The correction belongs to one phone position. M5d's sittings vary the position, so run the crop check on each new sitting. If the corrected offsets drift past 3 px, refit on all sittings together. M5c's sidecar must load the same file, and fine-tuning must preprocess with it so training and use see the same crops.
 
 ### Running it on the Mac (v1)
 
@@ -535,8 +565,8 @@ Build in this order; each milestone ends with its checks passing. Hand Claude Co
 
 **M5 — Silent dictation** (Step 3)
 
-- [ ] Phase A: USR 2.0 and Auto-AVSR WER, CER and latency on 50 aloud + 50 silent takes recorded in `runs/baseline/metrics.json`
-- [ ] Mouth crops checked side by side against the model's expected input
+- [x] Phase A: USR 2.0 and Auto-AVSR WER, CER and latency on 50 aloud + 50 silent takes recorded in `runs/baseline/metrics.json` (run on 10 + 10, which settled the choice, see "Phase A details settled in M5b")
+- [x] Mouth crops checked side by side against the model's expected input
 - [ ] ≥ 1,000 aloud + 1,000 silent sentence takes across ≥ 8 sittings, plus the 100-prompt test set
 - [ ] Fine-tuned model beats the baseline's silent WER on 2 held-out sittings
 - [ ] Python sidecar starts with the Mac app and survives a crash/restart
@@ -546,7 +576,7 @@ Build in this order; each milestone ends with its checks passing. Hand Claude Co
 M5 is built in five parts. M5a is code that needs no data. M5b needs one recorded sitting and the checkpoints. M5c can run on the pretrained model before any fine-tuning.
 
 - [x] M5a: model harness. Submodules, `preprocess`, `models` with n-best, `evaluate`, `cropcheck`, and the everyday and test prompt lists
-- [ ] M5b: Phase A. Record one sitting, run the crop check, score both models, and pick one
+- [x] M5b: Phase A. Record one sitting, run the crop check, score both models, and pick one
 - [ ] M5c: Mac pipeline. `serve`, `ModelSidecar`, `SilentDictationPipeline`, the Silent Dictation settings tab and the LLM cleanup
 - [ ] M5d: data collection. 8 to 10 sittings and the test-set sitting
 - [ ] M5e: fine-tuning. `finetune`, one GPU run, and the held-out and test-set scores

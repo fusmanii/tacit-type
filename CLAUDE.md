@@ -1,6 +1,6 @@
 # Tacit Type
 
-The spec is docs/SPEC.md. Work one milestone at a time in the order it lists. M0 to M3 are built. M3b (mouth video) and M4 (dictation) are written and their tests pass, but their acceptance checks still need a real iPhone. M5 is split into M5a to M5e in the spec. M5a (the model harness) is built. M5b, the Phase A baseline, needs one recorded sitting and the checkpoints.
+The spec is docs/SPEC.md. Work one milestone at a time in the order it lists. M0 to M3 are built. M3b (mouth video) and M4 (dictation) are written and their tests pass, but their acceptance checks still need a real iPhone. M5 is split into M5a to M5e in the spec. M5a (the model harness) and M5b (the Phase A baseline) are built. Phase A picked Auto-AVSR at beam 10 with the alignment correction. M5c, the Mac pipeline, is next.
 
 Step 3 is silent dictation from mouth video. The old command classifier design is gone.
 
