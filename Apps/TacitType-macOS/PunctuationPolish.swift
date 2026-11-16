@@ -8,7 +8,7 @@ import FoundationModels
 /// On timeout, on failure, or before macOS 26 the raw text is used.
 ///
 /// Built only with the macOS 26 SDK (Xcode 26). With older SDKs `isAvailable` is always false.
-/// Not yet run on a Mac with macOS 26.
+@MainActor
 enum PunctuationPolish {
     static let timeout: Duration = .milliseconds(400)
 
@@ -21,16 +21,35 @@ enum PunctuationPolish {
         return false
     }
 
+    static let instructions = """
+    You fix punctuation and capitalisation in dictated text. Never add, remove, reorder or change words. \
+    Reply with the corrected text only.
+    """
+
+    #if canImport(FoundationModels)
+    /// A prewarmed session for the next dictation, since the model's first call is slow.
+    private static var next: (any Sendable)?
+    #endif
+
+    static func prewarm() {
+        #if canImport(FoundationModels)
+        if #available(macOS 26, *), isAvailable, DictationSettings.polishEnabled, next == nil {
+            let session = LanguageModelSession(instructions: instructions)
+            session.prewarm()
+            next = session
+        }
+        #endif
+    }
+
     static func polish(_ text: String) async -> String {
         #if canImport(FoundationModels)
         if #available(macOS 26, *), SystemLanguageModel.default.isAvailable {
+            let session = next as? LanguageModelSession ?? LanguageModelSession(instructions: instructions)
+            next = nil
+            defer { prewarm() }
             let polished = await withTaskGroup(of: String?.self) { group in
                 group.addTask {
-                    let session = LanguageModelSession(instructions: """
-                    You fix punctuation and capitalisation in dictated text. Never add, remove, reorder or change words. \
-                    Reply with the corrected text only.
-                    """)
-                    return try? await session.respond(to: text).content
+                    try? await session.respond(to: text).content
                 }
                 group.addTask {
                     try? await Task.sleep(for: timeout)

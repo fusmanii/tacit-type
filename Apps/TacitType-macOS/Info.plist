@@ -32,5 +32,7 @@
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Tacit Type connects to your iPhone to receive face and audio data.</string>
+	<key>TacitMLFolder</key>
+	<string>$(TACIT_ML_FOLDER)</string>
 </dict>
 </plist>

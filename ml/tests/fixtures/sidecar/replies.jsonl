@@ -1,0 +1,4 @@
+{"health":{"beam":10,"checkpoint":"/models/vsr_trlrs2lrs3vox2avsp_base.pth","correction":"/models/alignment_correction.json","correctionCreatedAt":"2026-11-16T01:51:50+00:00","device":"mps","model":"auto-avsr","pid":4242,"protocolVersion":1,"state":"ready"},"id":1}
+{"health":{"beam":10,"checkpoint":"/models/x.pth","device":"cpu","model":"auto-avsr","pid":7,"protocolVersion":1,"state":"loading"},"id":1}
+{"id":2,"transcript":{"frames":119,"hypotheses":[{"score":-3.25,"text":"a small creek cut across the field"},{"score":-4.5,"text":"a small cricket across the field"}],"timings":{"decode_s":0.5,"load_s":0.0625,"preprocess_s":0.125}}}
+{"error":{"code":"too_short","message":"clip has 5 frames, the models need at least 12"},"id":3}

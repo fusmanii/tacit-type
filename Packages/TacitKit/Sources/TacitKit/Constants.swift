@@ -77,6 +77,11 @@ public enum Constants {
     ]
 
     public static var cropLandmarkCount: Int { CropLandmark.allCases.count }
+
+    // MARK: Lip-reading sidecar (M5c)
+
+    /// Version of the sidecar's JSON protocol (`SidecarProtocol`). Bump on any change to its fields.
+    public static let sidecarProtocolVersion = 1
 }
 
 /// The 12 crop landmark slots, in wire and `mouth.bin` order.

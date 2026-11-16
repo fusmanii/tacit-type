@@ -7,7 +7,7 @@ struct SettingsView: View {
             Tab("Devices", systemImage: "iphone") { DevicesSettingsView() }
             Tab("Hotkeys", systemImage: "keyboard") { HotkeysSettingsView() }
             Tab("Dictation", systemImage: "waveform") { DictationSettingsView() }
-            Tab("Silent Dictation", systemImage: "mouth") { PlaceholderView(title: "Silent Dictation", milestone: "M5") }
+            Tab("Silent Dictation", systemImage: "mouth") { SilentDictationSettingsView() }
             Tab("Data", systemImage: "externaldrive") { DataSettingsView() }
             Tab("Diagnostics", systemImage: "stethoscope") { DiagnosticsView() }
         }
@@ -21,6 +21,7 @@ private struct DiagnosticsView: View {
     var body: some View {
         Form {
             DictationSection()
+            SilentDictationSection()
             GateSection()
             CaptureSection()
             Section("Link") {
@@ -36,20 +37,11 @@ private struct DiagnosticsView: View {
             Section("Versions") {
                 LabeledContent("Protocol version", value: "\(Constants.protocolVersion)")
                 LabeledContent("Feature schema", value: "\(Constants.featureSchemaVersion)")
+                LabeledContent("Sidecar protocol", value: "\(Constants.sidecarProtocolVersion)")
                 LabeledContent("Bonjour service", value: Constants.bonjourServiceType)
             }
         }
         .formStyle(.grouped)
-    }
-}
-
-struct PlaceholderView: View {
-    let title: String
-    let milestone: String
-
-    var body: some View {
-        ContentUnavailableView(title, systemImage: "hammer", description: Text("Arrives in \(milestone)."))
-            .frame(minWidth: 360, minHeight: 240)
     }
 }
 
@@ -80,6 +72,47 @@ private struct DictationSection: View {
             Text("Dictation")
         } footer: {
             Text("The M4 latency check expects small.en. Run it with the Fast model.")
+        }
+    }
+}
+
+private struct SilentDictationSection: View {
+    @Environment(DictationController.self) private var dictation
+
+    var body: some View {
+        Section {
+            let stats = dictation.silentLatency
+            if stats.count == 0 {
+                LabeledContent("Stop → inserted", value: "No silent dictations yet")
+            } else {
+                Check(label: "p50 stop → inserted ≤ \(ms(DictationController.silentBudget))",
+                      value: "\(ms(stats.p50)) · p95 \(ms(stats.p95)) · n = \(stats.count)",
+                      passed: (stats.p50 ?? .infinity) <= DictationController.silentBudget)
+            }
+            if let last = dictation.lastSilent {
+                LabeledContent("Last silent dictation") {
+                    Text("""
+                    tail + stop \(ms(last.tailAndStop)) · gate \(ms(last.gate)) · write \(ms(last.write)) · \
+                    sidecar \(ms(last.sidecar)) (load \(ms(last.sidecarTimings.load)), preprocess \(ms(last.sidecarTimings.preprocess)), \
+                    decode \(ms(last.sidecarTimings.decode))) · cleanup \(ms(last.cleanup)) · insert \(ms(last.insert)) (\(last.method.rawValue)) · \
+                    \(last.frames) frames
+                    """)
+                    .monospacedDigit()
+                    .font(.caption)
+                    .multilineTextAlignment(.trailing)
+                }
+                LabeledContent(last.usedCleanup ? "Typed (LLM)" : "Typed (top guess)", value: last.text)
+                LabeledContent("Guesses") {
+                    Text(last.hypotheses.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n"))
+                        .font(.caption)
+                        .multilineTextAlignment(.trailing)
+                        .textSelection(.enabled)
+                }
+            }
+        } header: {
+            Text("Silent Dictation")
+        } footer: {
+            Text("The M5 latency check is for utterances of about 5 s.")
         }
     }
 }
