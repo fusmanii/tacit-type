@@ -43,8 +43,10 @@ build: build-mac build-ios
 build-mac: generate
 	$(XCB) -scheme TacitType-macOS -destination 'generic/platform=macOS' build
 
+# A generic simulator destination builds every simulator architecture. The project is Apple silicon
+# only, so the x86_64 half would be wasted.
 build-ios: generate
-	$(XCB) -scheme TacitType-iOS -destination 'generic/platform=iOS Simulator' build
+	$(XCB) -scheme TacitType-iOS -destination 'generic/platform=iOS Simulator' ARCHS=arm64 build
 
 test: test-swift test-python
 
