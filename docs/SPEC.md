@@ -511,6 +511,97 @@ Phase A results on that sitting (about 80 words per style, so a few points eithe
 - If the mouth gate is open and the audio is clearly voiced (energy VAD on > 50% of open frames), the user spoke out loud: route the clip to `DictationPipeline` instead.
 - Latency target: release → text ≤ 2.5 s for a 5 s utterance. Measure it in Phase A; optimise later (smaller checkpoint, Core ML, int8).
 
+### M5c scope (Mac pipeline)
+
+M5c wires Phase A's pick into the Mac app. It runs on the pretrained Auto-AVSR checkpoint at beam 10 with the alignment correction. M5e later swaps in a fine-tuned checkpoint through a setting, with no code change. M5c needs no new training data.
+
+**How a clip reaches the sidecar.** The Mac writes the capture as a normal session folder and sends its path plus a time window. It does not send frames over the socket.
+
+- Training reads `mouth.mp4`, which is the iPhone's JPEG crops re-encoded as H.264. Serving from the same file means training and use see the same compression, and the Python loader that already has a parity test does the reading.
+- When "Save sessions for training" is on, the folder goes to the data folder and is written once. Otherwise it goes to `Application Support/TacitType/tmp` and is deleted after the reply. The sidecar deletes nothing.
+- The Mac trims by window, not by cutting frames. The saved session keeps the whole capture, and the sidecar decodes only the frames inside `[start, end]`.
+- Writing the folder must take under 100 ms for a 5 s clip. M5c measures it. If it is slower, write only `mouth.mp4`, `mouth.bin` and the manifest on the temp path.
+
+**Sidecar protocol.** It is newline-delimited JSON over a Unix socket at `Application Support/TacitType/sidecar.sock`. It is a format shared with Python, so it lives in `TacitKit/Sidecar/SidecarProtocol.swift`, is mirrored in `silentml/serve.py`, and gets a parity test from a Swift-written fixture. A `sidecarProtocolVersion` constant joins the other version constants.
+
+| Request | Fields | Reply |
+| --- | --- | --- |
+| `health` | `id` | `id`, `state` (`loading`, `ready`), `model`, `beam`, `device`, `checkpoint`, `correction` and `correctionCreatedAt` (left out when there is none), `protocolVersion`, `pid` |
+| `transcribe` | `id`, `session` (folder path), `start`, `end` (host-clock seconds, optional), `n` (default 5) | `id`, `hypotheses` (`text`, `score`, best first), `frames`, `timings` (`load_s`, `preprocess_s`, `decode_s`) |
+| any | | on failure, `id`, `error` (`code`, `message`). Codes are `too_short`, `no_mouth`, `bad_session`, `bad_request`, `not_ready`, `internal` |
+
+The socket path must stay under 104 bytes, which macOS allows for a Unix socket path. The sidecar handles one request at a time. A second request waits its turn.
+
+**`silentml.serve`.**
+
+- `python -m silentml.serve --socket <path> --model auto-avsr --beam 10 [--checkpoint <path>] [--no-correction]`. It loads through `models.load`, so it picks up `alignment_correction.json` the same way `evaluate` does.
+- Before it answers `ready` it decodes one dummy clip, because the first MPS call is slow. Until then `health` replies `loading` and `transcribe` replies `not_ready`.
+- It exits when its stdin closes. The app holds the other end of that pipe, so a crashed or force-quit app never leaves an orphan holding 1 GB of weights.
+- It logs one line per request to stderr with the session id, frame count and timings, never the text.
+- Tests run it against the fixture session with a stub reader, so they need no weights.
+
+**`ModelSidecar` (Swift).**
+
+- It starts at app launch when the Python environment and checkpoint exist. It runs `<ml folder>/.venv/bin/python -m silentml.serve` with `Process`.
+- The ml folder defaults to `$(SRCROOT)/ml`, written into the Debug Info.plist at build time, so each worktree finds its own. Settings can override it with a folder picker.
+- States are `notConfigured`, `starting`, `ready`, `crashed(exitCode)` and `failed(message)`. It polls `health` every 2 s while starting and every 30 s once ready.
+- It restarts on an unexpected exit with the existing `ReconnectBackoff`. After 3 crashes in 5 minutes it stops and shows `failed` in Settings and the HUD.
+- It captures stderr to `Application Support/TacitType/logs/sidecar.log`, capped at 1 MB, and terminates the process on quit.
+
+**`SilentDictationPipeline`.**
+
+1. ⌃⌥S works like Dictate. The first press sends `start` with mode `silent` and all three streams. The second press keeps the 300 ms tail and stops. A second press within 250 ms cancels. `DictationController` gains the silent mode rather than a copy of its toggle logic.
+2. Run `MouthGate` on the face frames and audio. No open region shows "Didn't catch that". A voiced ratio over 50% means the user spoke aloud, so the same recording goes to `DictationPipeline` instead. If the gate is bypassed because tracking dropped under 80%, use the whole clip.
+3. The window runs from the first open region's start to the last one's end. Under 0.48 s (12 frames) shows "Didn't catch that". If mean mouth luma is under `TakeQuality.lowLightLuma`, still decode but show "Too dark to read lips well" with the result.
+4. Write the session folder, then send `transcribe` with a 4 s timeout. If the sidecar is not ready, the HUD says so and points to Settings → Silent Dictation.
+5. Clean up with the on-device LLM as Phase C says. It gets the n-best texts, the focused app's name and the viseme note, with an 800 ms timeout. Prewarm the session at launch, and do the same for M4's punctuation polish.
+6. Use the LLM's sentence only if it is not empty and has no more than twice the words of the longest hypothesis. Otherwise, or on timeout, use the top hypothesis with its first letter capitalised. Then apply the user's replacements list from Dictation.
+7. Insert with `TextInserter`. The HUD shows the text for 1.5 s.
+
+**Saved silent dictations.** With "Save sessions for training" on, a silent dictation is saved with mode `silent` and speech style `silent`. Its `transcript.json` holds the inserted text, with `model` naming the lip reader and the LLM. That text is a guess, not a label. Training and `evaluate` must keep using `promptText` only, so sessions without a prompt never become training targets.
+
+**Settings → Silent Dictation.** It shows the sidecar state with a coloured dot, the model, beam, device and checkpoint, and whether an alignment correction is loaded and when it was fitted. It has the ml folder and checkpoint pickers, the LLM cleanup toggle with a note when the on-device model is unavailable, a "Restart sidecar" button and the last 20 lines of `sidecar.log`.
+
+**Diagnostics.** It shows silent stop press → inserted p50 and p95 against 2.5 s, and the last silent dictation's stages. Those are tail and stop, gate, folder write, sidecar round trip with its preprocess and decode, LLM, and insert. It also shows the n-best list next to the inserted text, so LLM cleanup can be judged.
+
+**Latency budget (stop press → inserted, 5 s clip).**
+
+| Stage | Budget |
+| --- | --- |
+| Tail + `stop` + last batches | 350 ms |
+| Mouth gate | 10 ms |
+| Write session folder (measured 125 ms) | 130 ms |
+| Sidecar preprocess + decode (Phase A measured 0.63 s) | 700 ms |
+| Socket round trip + JSON | 20 ms |
+| LLM cleanup (timeout) | 800 ms |
+| Insert | 50 ms |
+| **Total** | **≈ 2.05 s (target ≤ 2.5 s)** |
+
+**Out of scope for M5c.** Fine-tuning and new sittings belong to M5d and M5e. The Core ML or MLX port and incremental decoding while the key is held belong to v2. So do installing the Python environment for the user and an onboarding check for it, which are M6.
+
+**M5c acceptance.**
+
+- [x] `make test-python` covers `serve` with a stub reader, and the protocol parity test passes in both languages
+- [x] The sidecar starts with the Mac app, reports `ready`, and is back to `ready` within 30 s after `kill -9`
+- [x] Quitting the app, or force-quitting it, leaves no `silentml.serve` process
+- [ ] Press ⌃⌥S, mouth a sentence, press it again, and text appears in TextEdit, Notes and Slack
+- [ ] Stop press → inserted p50 ≤ 2.5 s over 20 silent dictations of about 5 s, on the pretrained checkpoint
+- [ ] Speaking aloud after ⌃⌥S types Whisper's text, and a closed mouth types nothing
+- [ ] A silent dictation saved for training loads in `silentml.data` and is left out of `evaluate`
+
+### Mac pipeline details settled in M5c
+
+- Writing a 5 s session folder first took 500 ms. Encoding was only 85 ms of it. The rest was a per-pixel Swift loop that maps gray levels into video range, and it is slow in Debug builds, which is what `make run-signed` makes. A vImage table lookup does the same mapping in both directions, so the files are unchanged, and the write now takes about 125 ms. The rest is mostly the H.264 encode. Encoding while the capture runs would take that out too, if it ever matters.
+- On three silent takes from the baseline sitting, the real sidecar answered in 0.43 to 0.84 s round trip. The 5 s take spent 82 ms loading the folder, 18 ms preprocessing and 742 ms decoding. The model was ready 13 s after the sidecar started, including the warm-up decode.
+- `serve` exits with code 2 for a setup problem a restart can't fix, such as a missing checkpoint or another sidecar on the socket. `ModelSidecar` shows that as failed and doesn't retry. Any other exit counts as a crash.
+- The sidecar's socket file is mode 0600. A stale socket file left by a crash is removed at start.
+- `ModelSidecar` starts the sidecar from `<ml folder>/.venv/bin/python` with the ml folder as its working directory. Debug builds read the folder from `TacitMLFolder` in Info.plist, which `project.yml` sets to `$(SRCROOT)/ml`. Release builds leave it empty, so Settings has to name it.
+- The health poll also checks `protocolVersion`. A mismatch stops the sidecar and shows failed, rather than sending requests it may misread.
+- When ⌃⌥S finds the audio voiced, Whisper's text is typed and the session is saved with mode `silent` and the style Whisper's path measured.
+- `SilentCleanup` keeps one prewarmed `LanguageModelSession` ready and makes a new one after each dictation. M4's punctuation polish now does the same, so its first use doesn't pay the slow first call either. Both use the macOS 27 SDK and are built, but neither has run in a real dictation yet.
+- In the app, the sidecar was ready about 4 s after launch with the checkpoint in the file cache, and 13 s from cold. After `kill -9` it restarted in 0.5 s and was ready 4.5 s after the kill. Quitting the app, or killing it with `kill -9`, ended the sidecar at once and removed its socket.
+- PyAV and OpenCV each bundle their own `libavdevice`, and the Objective-C runtime warns about it when the sidecar starts. It has caused no errors so far. The Settings log view hides those lines.
+
 ### Face ID data (kept for v2)
 
 Every session keeps `face.bin`. v1 uses it only for `MouthActivity`. Planned v2: feed the ARKit values to the model as a second input for low light and jaw/lip-rounding cues, and evaluate ARKit's raw depth map (`capturedDepthData`, which arrives at a lower rate than video).
@@ -577,7 +668,7 @@ M5 is built in five parts. M5a is code that needs no data. M5b needs one recorde
 
 - [x] M5a: model harness. Submodules, `preprocess`, `models` with n-best, `evaluate`, `cropcheck`, and the everyday and test prompt lists
 - [x] M5b: Phase A. Record one sitting, run the crop check, score both models, and pick one
-- [ ] M5c: Mac pipeline. `serve`, `ModelSidecar`, `SilentDictationPipeline`, the Silent Dictation settings tab and the LLM cleanup
+- [x] M5c: Mac pipeline. `serve`, `ModelSidecar`, `SilentDictationPipeline`, the Silent Dictation settings tab and the LLM cleanup. See "M5c scope (Mac pipeline)". Its in-app checks still need a run with the iPhone
 - [ ] M5d: data collection. 8 to 10 sittings and the test-set sitting
 - [ ] M5e: fine-tuning. `finetune`, one GPU run, and the held-out and test-set scores
 

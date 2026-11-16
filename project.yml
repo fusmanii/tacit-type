@@ -59,7 +59,14 @@ targets:
         NSLocalNetworkUsageDescription: Tacit Type connects to your iPhone to receive face and audio data.
         NSBonjourServices: [_tacittype._tcp]
         NSAccessibilityUsageDescription: Tacit Type types your dictation into the app you're using.
+        # Where the lip-reading sidecar's Python lives. Debug builds point at their own checkout.
+        TacitMLFolder: $(TACIT_ML_FOLDER)
     settings:
+      configs:
+        Debug:
+          TACIT_ML_FOLDER: $(SRCROOT)/ml
+        Release:
+          TACIT_ML_FOLDER: ""
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.tacittype.mac
         PRODUCT_NAME: TacitType

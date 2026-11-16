@@ -1,3 +1,4 @@
+import Accelerate
 @preconcurrency import AVFoundation
 import CoreVideo
 import Foundation
@@ -153,6 +154,20 @@ public enum MouthVideo {
         UInt8(clamping: ((Int(value) - 16) * 255 + 109) / 219)
     }
 
+    private static let videoRangeTable: [Pixel_8] = (0 ... 255).map { toVideoRange(UInt8($0)) }
+    private static let fullRangeTable: [Pixel_8] = (0 ... 255).map { toFullRange(UInt8($0)) }
+
+    /// Maps a plane through a 256-entry table with vImage. A per-pixel Swift loop took about 3.5 ms a
+    /// frame in Debug builds, which made writing a 5 s clip take half a second.
+    private static func lookUp(_ table: [Pixel_8], from source: UnsafeRawPointer, sourceRow: Int,
+                               to destination: UnsafeMutableRawPointer, destinationRow: Int, size: Int) {
+        var src = vImage_Buffer(data: UnsafeMutableRawPointer(mutating: source), height: vImagePixelCount(size),
+                                width: vImagePixelCount(size), rowBytes: sourceRow)
+        var dest = vImage_Buffer(data: destination, height: vImagePixelCount(size), width: vImagePixelCount(size),
+                                 rowBytes: destinationRow)
+        table.withUnsafeBufferPointer { _ = vImageTableLookUp_Planar8(&src, &dest, $0.baseAddress!, vImage_Flags(kvImageNoFlags)) }
+    }
+
     private static func makeBuffer(_ pixels: [UInt8], size: Int, pool: CVPixelBufferPool) throws -> CVPixelBuffer {
         var made: CVPixelBuffer?
         CVPixelBufferPoolCreatePixelBuffer(nil, pool, &made)
@@ -160,9 +175,9 @@ public enum MouthVideo {
         CVPixelBufferLockBaseAddress(buffer, [])
         defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
         let lumaRow = CVPixelBufferGetBytesPerRowOfPlane(buffer, 0)
-        let luma = CVPixelBufferGetBaseAddressOfPlane(buffer, 0)!.assumingMemoryBound(to: UInt8.self)
-        for row in 0 ..< size {
-            for column in 0 ..< size { luma[row * lumaRow + column] = toVideoRange(pixels[row * size + column]) }
+        let luma = CVPixelBufferGetBaseAddressOfPlane(buffer, 0)!
+        pixels.withUnsafeBytes {
+            lookUp(videoRangeTable, from: $0.baseAddress!, sourceRow: size, to: luma, destinationRow: lumaRow, size: size)
         }
         let chromaRow = CVPixelBufferGetBytesPerRowOfPlane(buffer, 1)
         let chroma = CVPixelBufferGetBaseAddressOfPlane(buffer, 1)!
@@ -177,10 +192,9 @@ public enum MouthVideo {
               let base = CVPixelBufferGetBaseAddressOfPlane(buffer, 0)
         else { throw VideoError.cannotRead("unexpected frame size") }
         let row = CVPixelBufferGetBytesPerRowOfPlane(buffer, 0)
-        let luma = base.assumingMemoryBound(to: UInt8.self)
         var pixels = [UInt8](repeating: 0, count: size * size)
-        for y in 0 ..< size {
-            for x in 0 ..< size { pixels[y * size + x] = toFullRange(luma[y * row + x]) }
+        pixels.withUnsafeMutableBytes {
+            lookUp(fullRangeTable, from: base, sourceRow: row, to: $0.baseAddress!, destinationRow: size, size: size)
         }
         return pixels
     }

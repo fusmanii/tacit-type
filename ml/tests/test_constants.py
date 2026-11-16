@@ -65,3 +65,9 @@ def test_mouth_constants_match_swift():
     assert f"mouthCropSize = {MOUTH_CROP_SIZE}" in source
     assert f"mouthFps: Double = {MOUTH_FPS}" in source
     assert f"mouthFileVersion: UInt16 = {MOUTH_FILE_VERSION}" in source
+
+
+def test_sidecar_protocol_version_matches_swift():
+    from silentml.constants import SIDECAR_PROTOCOL_VERSION
+
+    assert f"sidecarProtocolVersion = {SIDECAR_PROTOCOL_VERSION}" in swift_source()

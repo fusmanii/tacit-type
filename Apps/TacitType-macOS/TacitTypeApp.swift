@@ -12,6 +12,7 @@ struct TacitTypeApp: App {
     @State private var dictation: DictationController
     @State private var labelJob: LabelJob
     @State private var gateEvaluation: GateEvaluation
+    @State private var sidecar: ModelSidecar
     private let triggers = TriggerCenter()
 
     init() {
@@ -21,7 +22,9 @@ struct TacitTypeApp: App {
         let engine = WhisperEngine()
         let calibration = GateCalibration()
         let pipeline = DictationPipeline(engine: engine, calibration: calibration)
-        let dictation = DictationController(devices: devices, sessions: sessions, pipeline: pipeline,
+        let sidecar = ModelSidecar()
+        let silent = SilentDictationPipeline(sidecar: sidecar, calibration: calibration)
+        let dictation = DictationController(devices: devices, sessions: sessions, pipeline: pipeline, silent: silent,
                                             hud: HUDController(), store: recorder.store)
         _devices = State(initialValue: devices)
         _sessions = State(initialValue: sessions)
@@ -32,10 +35,15 @@ struct TacitTypeApp: App {
         _dictation = State(initialValue: dictation)
         _labelJob = State(initialValue: LabelJob(engine: engine, store: recorder.store))
         _gateEvaluation = State(initialValue: GateEvaluation(pipeline: pipeline, store: recorder.store))
+        _sidecar = State(initialValue: sidecar)
 
         triggers.handler = { dictation.handle($0) }
         triggers.add(HotkeyTrigger())
         engine.loadIfDownloaded()
+        sidecar.start()
+        // Apple's on-device model is slow on its first call, so both cleanups load it now.
+        SilentCleanup.prewarm()
+        PunctuationPolish.prewarm()
         let store = recorder.store
         Task { await calibration.refresh(from: store) }
         recorder.onSaved = { prompt in
@@ -72,6 +80,7 @@ struct TacitTypeApp: App {
                 .environment(dictation)
                 .environment(labelJob)
                 .environment(gateEvaluation)
+                .environment(sidecar)
         }
     }
 }
