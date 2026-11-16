@@ -97,7 +97,8 @@ private final class FakeSidecar: @unchecked Sendable {
 
     init(reply: @escaping @Sendable (Data) -> Data?) throws {
         path = "/tmp/tacit-test-\(UUID().uuidString.prefix(8)).sock"
-        fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        let listener = socket(AF_UNIX, SOCK_STREAM, 0)
+        fd = listener
         var address = sockaddr_un()
         address.sun_family = sa_family_t(AF_UNIX)
         let bytes = Array(path.utf8)
@@ -106,12 +107,11 @@ private final class FakeSidecar: @unchecked Sendable {
             raw[bytes.count] = 0
         }
         let bound = withUnsafePointer(to: &address) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(listener, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
         }
-        guard bound == 0, listen(fd, 1) == 0 else { throw SidecarClientError.ioFailed(errno) }
-        let fd = fd
+        guard bound == 0, listen(listener, 1) == 0 else { throw SidecarClientError.ioFailed(errno) }
         Thread.detachNewThread { [self] in
-            let client = accept(fd, nil, nil)
+            let client = accept(listener, nil, nil)
             guard client >= 0 else { return }
             defer { close(client) }
             var buffer = [UInt8](repeating: 0, count: 4096)

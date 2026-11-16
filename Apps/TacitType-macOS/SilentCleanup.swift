@@ -32,7 +32,7 @@ enum SilentCleanup {
         if #available(macOS 26, *), isAvailable, next == nil {
             let session = LanguageModelSession(instructions: SilentDictation.cleanupInstructions)
             session.prewarm()
-            next = session
+            next = SessionBox(session: session)
         }
         #endif
     }
@@ -42,14 +42,20 @@ enum SilentCleanup {
         #if canImport(FoundationModels)
         if #available(macOS 26, *), isAvailable, !hypotheses.isEmpty {
             prewarm()
-            guard let session = next as? LanguageModelSession else { return nil }
+            guard let session = (next as? SessionBox)?.session else { return nil }
             next = nil
             defer { prewarm() }
             let prompt = SilentDictation.cleanupPrompt(hypotheses: hypotheses, appName: appName)
             let longest = hypotheses.map { $0.split(separator: " ").count }.max() ?? 0
+            // The macOS 27 SDK (Swift 6.4) renamed `sampling:` to `samplingMode:`. CI still builds with Xcode 26.
+            #if compiler(>=6.4)
             let options = GenerationOptions(samplingMode: .greedy, maximumResponseTokens: 4 * longest + 16)
+            #else
+            let options = GenerationOptions(sampling: .greedy, maximumResponseTokens: 4 * longest + 16)
+            #endif
+            let box = SessionBox(session: session)
             let output = await withTaskGroup(of: String?.self) { group in
-                group.addTask { try? await session.respond(to: prompt, options: options).content }
+                group.addTask { try? await box.session.respond(to: prompt, options: options).content }
                 group.addTask {
                     try? await Task.sleep(for: timeout)
                     return nil
@@ -64,3 +70,12 @@ enum SilentCleanup {
         return nil
     }
 }
+
+#if canImport(FoundationModels)
+/// Carries a session into a task. The macOS 27 SDK marks `LanguageModelSession` Sendable, and older
+/// SDKs may not. Each session is used by one dictation at a time, so sharing it is safe.
+@available(macOS 26, *)
+struct SessionBox: @unchecked Sendable {
+    let session: LanguageModelSession
+}
+#endif

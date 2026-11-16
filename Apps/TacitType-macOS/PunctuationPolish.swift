@@ -36,7 +36,7 @@ enum PunctuationPolish {
         if #available(macOS 26, *), isAvailable, DictationSettings.polishEnabled, next == nil {
             let session = LanguageModelSession(instructions: instructions)
             session.prewarm()
-            next = session
+            next = SessionBox(session: session)
         }
         #endif
     }
@@ -44,12 +44,13 @@ enum PunctuationPolish {
     static func polish(_ text: String) async -> String {
         #if canImport(FoundationModels)
         if #available(macOS 26, *), SystemLanguageModel.default.isAvailable {
-            let session = next as? LanguageModelSession ?? LanguageModelSession(instructions: instructions)
+            let session = (next as? SessionBox)?.session ?? LanguageModelSession(instructions: instructions)
             next = nil
             defer { prewarm() }
             let polished = await withTaskGroup(of: String?.self) { group in
+                let box = SessionBox(session: session)
                 group.addTask {
-                    try? await session.respond(to: text).content
+                    try? await box.session.respond(to: text).content
                 }
                 group.addTask {
                     try? await Task.sleep(for: timeout)
