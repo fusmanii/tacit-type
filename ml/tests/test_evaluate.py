@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 from silentml.evaluate import (
+    MIN_FIT_TAKES,
     MODEL_BUDGET_S,
     char_errors,
     choose,
@@ -46,10 +47,21 @@ def test_summarise_is_corpus_level():
 
 
 def test_summarise_fits_a_line_for_the_five_second_clip():
-    takes = [take("silent", 0, 4, seconds=0.2 + 0.1 * v, video=v) for v in (1.0, 2.0, 4.0)]
+    takes = [take("silent", 0, 4, seconds=0.2 + 0.1 * v, video=v) for v in np.linspace(1.0, 4.0, MIN_FIT_TAKES)]
     speed = summarise(takes)["speed"]
     assert speed["five_second_clip_s"] == pytest.approx(0.7)
+    assert speed["five_second_estimate"] == "line"
     assert speed["fits"] == (0.7 <= MODEL_BUDGET_S)
+
+
+def test_summarise_scales_the_median_with_few_takes_or_a_falling_line():
+    # Two real takes from the M5b dry run, where the longer clip decoded faster.
+    takes = [take("aloud", 0, 4, seconds=1.01, video=3.48), take("aloud", 0, 4, seconds=1.17, video=3.0)]
+    many = takes * MIN_FIT_TAKES
+    for rows in (takes, many):
+        speed = summarise(rows)["speed"]
+        assert speed["five_second_estimate"] == "median_per_second"
+        assert speed["five_second_clip_s"] == pytest.approx(np.median([1.01 / 3.48, 1.17 / 3.0]) * 5)
 
 
 def model(silent_wer, fits=True):

@@ -28,6 +28,10 @@ OTHER_STAGES_S = 0.35 + 0.8 + 0.05
 MODEL_BUDGET_S = LATENCY_TARGET_S - OTHER_STAGES_S
 # Silent WERs closer than this count as a tie.
 TIE = 0.005
+# The 5 s estimate fits time against clip length only with at least this many takes. With fewer, or
+# when the fitted slope isn't positive, it scales the median time per video second instead. That
+# also counts the fixed cost per call five times, so it errs slow.
+MIN_FIT_TAKES = 10
 SENTENCE_STYLES = ("aloud", "silent")
 
 
@@ -103,15 +107,18 @@ def summarise(takes: list[dict]) -> dict:
         video = np.array([t["video_s"] for t in timed])
         seconds = np.array([t["seconds"] for t in timed])
         per_second = seconds / video
-        if len(set(video.round(2))) > 1:
+        slope = intercept = 0.0
+        if len(timed) >= MIN_FIT_TAKES and len(set(video.round(2))) > 1:
             slope, intercept = np.polyfit(video, seconds, 1)
-            five = float(intercept + slope * REFERENCE_CLIP_S)
+        if slope > 0:
+            five, estimate = float(intercept + slope * REFERENCE_CLIP_S), "line"
         else:
-            five = float(np.median(per_second) * REFERENCE_CLIP_S)
+            five, estimate = float(np.median(per_second) * REFERENCE_CLIP_S), "median_per_second"
         out["speed"] = {
             "seconds_per_video_second_p50": float(np.median(per_second)),
             "seconds_per_video_second_p95": float(np.percentile(per_second, 95)),
             "five_second_clip_s": five,
+            "five_second_estimate": estimate,
             "budget_s": MODEL_BUDGET_S,
             "fits": five <= MODEL_BUDGET_S,
         }
@@ -196,11 +203,15 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--sitting", action="append", help="only this sittingId (repeatable)")
     parser.add_argument("--test-set", action="store_true", help="score the held-out test prompts only")
     parser.add_argument("--beam", type=int, default=40)
+    parser.add_argument("--correction", type=Path, help="an alignment correction file (default: the saved one, if any)")
+    parser.add_argument("--no-correction", action="store_true", help="align without any correction")
     parser.add_argument("--device", help="mps or cpu (default: mps when available)")
     parser.add_argument("--limit", type=int, help="stop after this many takes")
     args = parser.parse_args(argv)
 
-    reader = models.load(args.model, checkpoint=args.checkpoint or "default", device=args.device, beam_size=args.beam)
+    correction = None if args.no_correction else (args.correction or "default")
+    reader = models.load(args.model, checkpoint=args.checkpoint or "default", device=args.device, beam_size=args.beam,
+                         correction=correction)
     sessions = sentence_takes(args.data, sittings=args.sitting, test_set=args.test_set)
     if args.limit:
         sessions = (s for i, s in zip(range(args.limit), sessions))
@@ -217,6 +228,7 @@ def main(argv: list[str] | None = None) -> None:
         "model": args.model,
         "checkpoint": str(args.checkpoint or models.checkpoint_path(args.model)),
         "beam": args.beam,
+        "correction": reader.correction.meta if reader.correction else None,
         "device": reader.device,
         "sittings": sorted({t["sittingId"] for t in takes if t.get("sittingId")}),
         "testSet": args.test_set,
@@ -231,6 +243,7 @@ def main(argv: list[str] | None = None) -> None:
     if speed:
         print(f"5 s clip in {speed['five_second_clip_s']:.2f} s (budget {speed['budget_s']:.1f} s, "
               f"{'fits' if speed['fits'] else 'too slow'}); p50 {speed['seconds_per_video_second_p50']:.2f} s per video second")
+    print(f"alignment correction: {reader.correction.meta['file'] if reader.correction else 'none'}")
     print(f"choice: {metrics['choice']['model']} ({metrics['choice']['reason']})")
     print(f"wrote {args.out / 'metrics.json'}")
 

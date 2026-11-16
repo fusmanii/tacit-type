@@ -12,6 +12,9 @@ Checkpoints download from the authors' Google Drive links into
 ~/Library/Application Support/TacitType/models/lipreading (override with TACIT_MODEL_DIR):
 
     python -m silentml.models download usr2-large auto-avsr
+
+The alignment correction that `python -m silentml.cropcheck --fit` writes lives in the same folder,
+and `load` applies it whenever it's there.
 """
 
 from __future__ import annotations
@@ -31,11 +34,12 @@ import numpy as np
 # failing. It must be set before torch is imported.
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 
-from .preprocess import mouth_rois, model_input  # noqa: E402
+from .preprocess import AlignmentCorrection, mouth_rois, model_input  # noqa: E402
 
 THIRD_PARTY = Path(__file__).resolve().parent.parent / "third_party"
 DEFAULT_MODEL_DIR = Path("~/Library/Application Support/TacitType/models/lipreading").expanduser()
 NBEST = 5
+CORRECTION_FILENAME = "alignment_correction.json"
 
 
 @dataclass(frozen=True)
@@ -74,6 +78,20 @@ def model_dir() -> Path:
 
 def checkpoint_path(name: str) -> Path:
     return model_dir() / CHECKPOINTS[name].filename
+
+
+def correction_path() -> Path:
+    return model_dir() / CORRECTION_FILENAME
+
+
+def load_correction(correction: Path | str | None = "default") -> AlignmentCorrection | None:
+    """"default" reads the saved correction if there is one, a path reads that file, and None turns it off."""
+    if correction is None:
+        return None
+    path = correction_path() if correction == "default" else Path(correction)
+    if correction == "default" and not path.exists():
+        return None
+    return AlignmentCorrection.load(path)
 
 
 _active_repo: str | None = None
@@ -142,6 +160,7 @@ class LipReader:
     name: str
     device: str
     beam_size: int
+    correction: AlignmentCorrection | None = None
 
     def __init__(self, video_process):
         self._video_process = video_process
@@ -150,7 +169,8 @@ class LipReader:
         """[T, 96, 96] uint8 mouth patches aligned the way this model was trained."""
         if session.mouth is None:
             raise ValueError(f"{session.path} has no mouth video")
-        return mouth_rois(session.mouth, session.mouth_ts, session.mouth_landmarks, self._video_process)
+        return mouth_rois(session.mouth, session.mouth_ts, session.mouth_landmarks, self._video_process,
+                          correction=self.correction)
 
     def preprocess(self, session):
         """[T, 88, 88] float tensor, ready for nbest."""
@@ -193,7 +213,10 @@ class USRReader(LipReader):
     """USR 2.0. Mirrors the repo's demo.py, which is its only inference path for one clip."""
 
     def __init__(self, name: str, checkpoint: Path | None, device: str, beam_size: int = 40,
-                 ctc_weight: float = 0.1, penalty: float = 0.0, maxlenratio: float = 1.0, minlenratio: float = 0.0):
+                 ctc_weight: float = 0.1, penalty: float = 0.0, maxlenratio: float = 0.0, minlenratio: float = 0.0):
+        # The repo's default maxlenratio is 1.0, which turns off ESPnet's end detection, so the search
+        # runs one step per video frame. 0 keeps the same length cap (the frame count) and stops once
+        # longer hypotheses can't win. On real takes it gave the same n-best 3.5 to 4.5 times faster.
         _use_repo("usr2")
         from omegaconf import OmegaConf
 
@@ -289,11 +312,12 @@ class AutoAVSRReader(LipReader):
 
 
 def load(name: str, checkpoint: Path | str | None = "default", device: str | None = None,
-         beam_size: int = 40) -> LipReader:
+         beam_size: int = 40, correction: Path | str | None = "default") -> LipReader:
     """Builds a model by name (a key of CHECKPOINTS).
 
     checkpoint "default" reads the downloaded file, a path reads that file (a fine-tuned run, say),
-    and None keeps random weights, which only the tests want.
+    and None keeps random weights, which only the tests want. correction works the same way for
+    the alignment correction (see `load_correction`).
     """
     if name not in CHECKPOINTS:
         raise KeyError(f"unknown model {name!r}. Known: {', '.join(CHECKPOINTS)}")
@@ -304,7 +328,9 @@ def load(name: str, checkpoint: Path | str | None = "default", device: str | Non
     path = None if checkpoint is None else Path(checkpoint)
     device = device or default_device()
     reader_type = USRReader if CHECKPOINTS[name].repo == "usr2" else AutoAVSRReader
-    return reader_type(name, path, device, beam_size=beam_size)
+    reader = reader_type(name, path, device, beam_size=beam_size)
+    reader.correction = load_correction(correction)
+    return reader
 
 
 def _file_digest(path: Path, algorithm: str) -> str:

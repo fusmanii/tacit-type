@@ -135,3 +135,46 @@ def test_model_input_matches_auto_avsr_test_transform():
     ours = model_input(rois)
     assert ours.shape == (12, 88, 88)
     assert torch.allclose(ours, theirs, atol=1e-5)
+
+
+def _correction(offsets):
+    from silentml.preprocess import STABLE_POINTS, AlignmentCorrection
+
+    pytest.importorskip("cv2")
+    reference = np.array([ibug_landmarks(landmark_array()[None])[0][i] for i in STABLE_POINTS])
+    return AlignmentCorrection(np.asarray(offsets, dtype=np.float64), reference)
+
+
+def test_a_zero_correction_changes_nothing():
+    from silentml.preprocess import STABLE_POINTS
+
+    points = ibug_landmarks(landmark_array()[None])[0]
+    assert np.allclose(_correction(np.zeros((len(STABLE_POINTS), 2))).apply(points), points)
+
+
+def test_a_correction_moves_the_alignment_points_and_keeps_the_mouth_centre():
+    from silentml.preprocess import STABLE_POINTS
+
+    points = ibug_landmarks(landmark_array()[None])[0]
+    offsets = np.zeros((len(STABLE_POINTS), 2))
+    offsets[STABLE_POINTS.index(33)] = (0.0, 6.0)  # nose base lands 6 px low
+    offsets[STABLE_POINTS.index(48)] = (4.0, 0.0)  # mouth corners sit 4 px in
+    offsets[STABLE_POINTS.index(54)] = (-4.0, 0.0)
+    out = _correction(offsets).apply(points)
+    # The reference here is our own landmarks, so the alignment is the identity.
+    assert np.allclose(out[33], points[33] - (0, 6))
+    assert np.allclose(out[48], points[48] - (4, 0)) and np.allclose(out[54], points[54] + (4, 0))
+    assert np.allclose(out[list(MOUTH_POINTS)].mean(axis=0), MOUTH_CENTRE)
+
+
+def test_a_correction_file_from_another_version_is_refused(tmp_path):
+    import json
+
+    from silentml.preprocess import STABLE_POINTS, AlignmentCorrection
+
+    _correction(np.zeros((len(STABLE_POINTS), 2))).save(tmp_path / "c.json")
+    assert AlignmentCorrection.load(tmp_path / "c.json").meta["file"] == str(tmp_path / "c.json")
+    record = json.loads((tmp_path / "c.json").read_text())
+    (tmp_path / "c.json").write_text(json.dumps({**record, "version": 99}))
+    with pytest.raises(PreprocessError):
+        AlignmentCorrection.load(tmp_path / "c.json")

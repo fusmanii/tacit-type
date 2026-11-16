@@ -27,7 +27,9 @@ run-signed: generate
 
 # Signed Debug build installed and launched on the connected iPhone.
 # Needs Config/Signing.local.xcconfig with your team.
-IOS_DEVICE ?= $(shell xcrun devicectl list devices 2>/dev/null | awk '/connected/ {for (i = 1; i <= NF; i++) if ($$i ~ /^[0-9A-F]{8}-[0-9A-F]{4}-/) {print $$i; exit}}')
+# The first physical device that devicectl lists as connected or available. Its identifier is the
+# field before "(UDID)". Names can contain spaces, so fields are found by content, not position.
+IOS_DEVICE ?= $(shell xcrun devicectl list devices 2>/dev/null | awk '/ physical/ && /connected|available/ {for (i = 2; i <= NF; i++) if ($$i == "(UDID)") {print $$(i-1); exit}}')
 
 run-ios: generate
 	@test -n "$(IOS_DEVICE)" || { echo "No connected iPhone. Plug it in, unlock it and try again."; exit 1; }
@@ -58,7 +60,7 @@ ml-env:
 
 # Downloads the Phase A checkpoints into ~/Library/Application Support/TacitType/models/lipreading.
 ml-models:
-	cd ml && .venv/bin/python -m silentml.models download usr2-large auto-avsr
+	cd ml && .venv/bin/python -m silentml.models download usr2-large usr2-huge auto-avsr
 
 test-python:
 	cd ml && .venv/bin/pytest

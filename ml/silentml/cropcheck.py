@@ -1,9 +1,15 @@
 """Phase A crop check: our aligned mouth crops beside the geometry each model was trained on.
 
-    python -m silentml.cropcheck --data <sessions dir> --model usr2-large --out runs/baseline/crops
+    python -m silentml.cropcheck --data <sessions dir> --model auto-avsr --out runs/baseline/crops
+    python -m silentml.cropcheck --data <sessions dir> --model auto-avsr --out runs/baseline/crops --fit
 
 Writes <out>/<model>.png with one row per sampled take (20 by default), and <out>/<model>.json
-with how far our alignment points land from the mean face, averaged over every frame.
+with how far our alignment points land from the mean face, averaged over every frame. Both are
+reported before ("raw") and after the alignment correction, when there is one.
+
+--fit measures the raw offsets on these takes and saves them as the alignment correction, next to
+the checkpoints, where `models.load` picks it up. Fit on a whole sitting or more, since it should
+hold for every take.
 
 Each row has three tiles, all scaled to 256 px tall:
 1. The iPhone crop with its 12 landmarks (green).
@@ -13,7 +19,7 @@ Each row has three tiles, all scaled to 256 px tall:
    crop as a box. The real lips should sit on the outline.
 
 ARKit's mesh points don't sit exactly where the iBUG annotators put theirs, so a consistent offset
-in the JSON (rather than scatter) means a fixed correction should be fitted once (see the spec).
+in the JSON (rather than scatter) means a fixed correction should be fitted (see the spec).
 No weights are loaded, so this runs before any checkpoint is downloaded.
 """
 
@@ -25,7 +31,15 @@ from pathlib import Path
 
 import numpy as np
 
-from .preprocess import MIN_FRAMES, STABLE_POINTS, ibug_landmarks, is_mirrored, mirror, uniform_indices
+from .preprocess import (
+    MIN_FRAMES,
+    STABLE_POINTS,
+    AlignmentCorrection,
+    ibug_landmarks,
+    is_mirrored,
+    mirror,
+    uniform_indices,
+)
 
 ALIGNED = 256  # both repos align into a 256x256 frame
 PATCH = 96
@@ -50,11 +64,18 @@ def _stable_reference(vp) -> np.ndarray:
     return np.asarray(vp.get_stable_reference(vp.reference, STABLE_POINTS, (ALIGNED, ALIGNED), (ALIGNED, ALIGNED)))
 
 
-def residuals(vp, frames: np.ndarray, landmarks: np.ndarray) -> np.ndarray:
+def _points(landmarks: np.ndarray, correction: AlignmentCorrection | None) -> list:
+    points = ibug_landmarks(landmarks)
+    if correction is None:
+        return points
+    return [None if p is None else correction.apply(p) for p in points]
+
+
+def residuals(vp, frames: np.ndarray, landmarks: np.ndarray, correction: AlignmentCorrection | None = None) -> np.ndarray:
     """[frames, 8, 2] offset of each aligned stable point from the mean face's, in aligned pixels."""
     reference = _stable_reference(vp)
     out = []
-    for frame, points in zip(frames, ibug_landmarks(landmarks)):
+    for frame, points in zip(frames, _points(landmarks, correction)):
         if points is None:
             continue
         _, aligned = vp.affine_transform(frame, points, vp.reference, grayscale=False)
@@ -76,13 +97,14 @@ def _dots(image, points, colour, scale: float, radius: int = 3):
             cv2.circle(image, (int(round(x * scale)), int(round(y * scale))), radius, colour, -1, cv2.LINE_AA)
 
 
-def row(vp, session) -> np.ndarray:
+def row(vp, session, correction: AlignmentCorrection | None = None) -> np.ndarray:
     """One row of the sheet for a session's middle frame."""
     import cv2
 
     frames, landmarks = _prepared(session)
     middle = len(frames) // 2
-    points = ibug_landmarks(landmarks[middle : middle + 1])[0]
+    all_points = _points(landmarks, correction)
+    points = all_points[middle]
 
     crop = cv2.resize(_bgr(frames[middle]), (TILE, TILE), interpolation=cv2.INTER_LINEAR)
     _dots(crop, landmarks[middle], GREEN, TILE / frames.shape[1])
@@ -92,7 +114,7 @@ def row(vp, session) -> np.ndarray:
     _dots(aligned_tile, _stable_reference(vp), RED, 1.0, radius=4)
     _dots(aligned_tile, np.asarray(aligned)[list(STABLE_POINTS)], GREEN, 1.0)
 
-    patches = vp(frames, ibug_landmarks(landmarks))
+    patches = vp(frames, all_points)
     patch = cv2.resize(_bgr(patches[middle]), (TILE, TILE), interpolation=cv2.INTER_NEAREST)
     scale = TILE / PATCH
     # The patch is centred on the mouth, so the mean face's lips belong around the patch centre.
@@ -129,6 +151,17 @@ def summary(offsets: np.ndarray) -> dict:
     }
 
 
+def _print(raw: dict, corrected: dict | None) -> None:
+    print(f"{'point':>5} {'dx':>6} {'dy':>6} {'sd':>5}" + ("   corrected dx    dy" if corrected else "")
+          + f"   (aligned pixels, {raw['frames']} frames)")
+    for index, p in raw["points"].items():
+        line = f"{index:>5} {p['dx']:6.1f} {p['dy']:6.1f} {max(p['sd_x'], p['sd_y']):5.1f}"
+        if corrected:
+            c = corrected["points"][index]
+            line += f"   {c['dx']:12.1f} {c['dy']:5.1f}"
+        print(line)
+
+
 def main(argv: list[str] | None = None) -> None:
     import cv2
 
@@ -141,27 +174,45 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--count", type=int, default=20, help="takes on the sheet")
     parser.add_argument("--sitting", action="append")
+    parser.add_argument("--fit", action="store_true", help="save these takes' mean offsets as the alignment correction")
+    parser.add_argument("--correction", type=Path, help="correction file to use or write (default: next to the checkpoints)")
+    parser.add_argument("--no-correction", action="store_true", help="check the alignment without any correction")
     args = parser.parse_args(argv)
 
     vp = models.video_process(args.model)
     sessions = [s for s in sentence_takes(args.data, sittings=args.sitting) if len(s.mouth) >= MIN_FRAMES]
     if not sessions:
         raise SystemExit("no sentence takes with mouth video")
-    offsets = np.concatenate([residuals(vp, *_prepared(s)) for s in sessions])
-    picks = np.unique(np.linspace(0, len(sessions) - 1, min(args.count, len(sessions))).round().astype(int))
-    sheet = np.concatenate([row(vp, sessions[i]) for i in picks], axis=0)
+    prepared = [_prepared(s) for s in sessions]
+    raw = np.concatenate([residuals(vp, *p) for p in prepared])
 
+    if args.fit:
+        path = args.correction or models.correction_path()
+        sittings = sorted({s.manifest.get("sittingId") for s in sessions if s.manifest.get("sittingId")})
+        AlignmentCorrection.fit(raw, _stable_reference(vp), takes=len(sessions), sittings=sittings).save(path)
+        print(f"wrote the alignment correction to {path}")
+    correction = None if args.no_correction else models.load_correction(args.correction or "default")
+    corrected = np.concatenate([residuals(vp, *p, correction) for p in prepared]) if correction else None
+
+    picks = np.unique(np.linspace(0, len(sessions) - 1, min(args.count, len(sessions))).round().astype(int))
+    sheet = np.concatenate([row(vp, sessions[i], correction) for i in picks], axis=0)
     args.out.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(args.out / f"{args.model}.png"), sheet)
-    result = {"model": args.model, "takes": len(sessions), **summary(offsets)}
+    result = {
+        "model": args.model,
+        "takes": len(sessions),
+        "correction": correction.meta["file"] if correction else None,
+        "raw": summary(raw),
+        "corrected": summary(corrected) if correction else None,
+    }
     (args.out / f"{args.model}.json").write_text(json.dumps(result, indent=2) + "\n")
 
-    print(f"{'point':>5} {'dx':>6} {'dy':>6} {'sd':>5}   (aligned pixels, {result['frames']} frames)")
-    for index, p in result["points"].items():
-        print(f"{index:>5} {p['dx']:6.1f} {p['dy']:6.1f} {max(p['sd_x'], p['sd_y']):5.1f}")
-    verdict = "looks systematic, so fit a fixed correction" if result["systematic_shift"] else "is within tolerance"
-    print(f"largest mean offset {result['max_mean_offset_px']:.1f} px {verdict}")
-    print(f"wrote {args.out / (args.model + '.png')}")
+    _print(result["raw"], result["corrected"])
+    final = result["corrected"] or result["raw"]
+    label = "after the correction" if correction else "with no correction"
+    verdict = "looks systematic, so fit a correction (--fit)" if final["systematic_shift"] else "is within tolerance"
+    print(f"largest mean offset {label} {final['max_mean_offset_px']:.1f} px {verdict}")
+    print(f"wrote {args.out / (args.model + '.png')} (drawn {label})")
 
 
 if __name__ == "__main__":

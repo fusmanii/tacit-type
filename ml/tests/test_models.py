@@ -50,3 +50,13 @@ def test_a_second_repo_in_one_process_is_refused():
     )
     run = subprocess.run([sys.executable, "-c", script], cwd=ML, capture_output=True, text=True)
     assert run.stdout.strip() == "refused", run.stderr
+
+
+def test_load_correction_is_optional(tmp_path, monkeypatch):
+    from silentml import models
+
+    monkeypatch.setenv("TACIT_MODEL_DIR", str(tmp_path))
+    assert models.load_correction("default") is None
+    assert models.load_correction(None) is None
+    with pytest.raises(FileNotFoundError):
+        models.load_correction(tmp_path / "missing.json")
