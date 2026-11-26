@@ -86,3 +86,9 @@ make test
 ## Signing
 
 Copy `Config/Signing.local.xcconfig.example` to `Config/Signing.local.xcconfig`. Then set your team in it. Tacit Type is a Developer ID build with hardened runtime and no App Sandbox, because it needs Accessibility and synthetic key events.
+
+## License
+
+The Tacit Type code is under the [MIT License](LICENSE).
+
+The two lip-reading model repos in `ml/third_party` keep their own licenses. USR 2.0 is MIT and Auto-AVSR is Apache 2.0. The pretrained checkpoints are not in this repo. They come from research datasets (LRS2, LRS3, VoxCeleb2 and AVSpeech) with their own terms. Use them for personal and research work only, unless you review those terms first.
