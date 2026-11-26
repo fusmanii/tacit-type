@@ -57,7 +57,7 @@ test-swift:
 # repos (git submodules) too. Checkpoints are separate: `make ml-models`.
 ml-env:
 	git submodule update --init
-	python3 -m venv ml/.venv
+	python3.14 -m venv ml/.venv
 	ml/.venv/bin/pip install -e 'ml[dev,models]'
 
 # Downloads the Phase A checkpoints into ~/Library/Application Support/TacitType/models/lipreading.

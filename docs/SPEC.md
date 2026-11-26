@@ -4,6 +4,10 @@ Nov 7, 2026 · @faisal
 
 Tacit Type is a Mac menu-bar app that triggers a docked iPhone to stream TrueDepth face data and audio, then turns it into typed text: first spoken or whispered speech, then silently mouthed sentences read from mouth video. This spec covers build steps 1–3 and is written to be handed to Claude Code.
 
+Silent dictation is free-form lip reading. The user mouths any sentence, and the app types it. There is no fixed command list. An early design had a silent command classifier, and Step 3 replaced it.
+
+**Status (Nov 26, 2026).** Silent dictation works end to end in the app with the pretrained Auto-AVSR model. The iPhone streams the mouth video, the sidecar reads it, the LLM cleanup picks a sentence, and the text appears in the focused app. Phase A measured 62.4% silent WER on that model. The next work is data collection (M5d) and fine-tuning (M5e).
+
 ## Scope
 
 v1 ships three things, in order: a synced face + audio recorder, a spoken/whisper dictation mode, and silent dictation from mouth video. The app runs entirely locally; only model fine-tuning may use a rented GPU.
@@ -598,7 +602,7 @@ The socket path must stay under 104 bytes, which macOS allows for a Unix socket 
 - `ModelSidecar` starts the sidecar from `<ml folder>/.venv/bin/python` with the ml folder as its working directory. Debug builds read the folder from `TacitMLFolder` in Info.plist, which `project.yml` sets to `$(SRCROOT)/ml`. Release builds leave it empty, so Settings has to name it.
 - The health poll also checks `protocolVersion`. A mismatch stops the sidecar and shows failed, rather than sending requests it may misread.
 - When ⌃⌥S finds the audio voiced, Whisper's text is typed and the session is saved with mode `silent` and the style Whisper's path measured.
-- `SilentCleanup` keeps one prewarmed `LanguageModelSession` ready and makes a new one after each dictation. M4's punctuation polish now does the same, so its first use doesn't pay the slow first call either. Both use the macOS 27 SDK and are built, but neither has run in a real dictation yet.
+- `SilentCleanup` keeps one prewarmed `LanguageModelSession` ready and makes a new one after each dictation. M4's punctuation polish now does the same, so its first use doesn't pay the slow first call either. Both use the macOS 27 SDK. `SilentCleanup` ran in real silent dictations on Nov 16 and 21, 2026. Those sessions record the model as `auto-avsr+apple-on-device`.
 - In the app, the sidecar was ready about 4 s after launch with the checkpoint in the file cache, and 13 s from cold. After `kill -9` it restarted in 0.5 s and was ready 4.5 s after the kill. Quitting the app, or killing it with `kill -9`, ended the sidecar at once and removed its socket.
 - PyAV and OpenCV each bundle their own `libavdevice`, and the Objective-C runtime warns about it when the sidecar starts. It has caused no errors so far. The Settings log view hides those lines.
 
@@ -668,7 +672,7 @@ M5 is built in five parts. M5a is code that needs no data. M5b needs one recorde
 
 - [x] M5a: model harness. Submodules, `preprocess`, `models` with n-best, `evaluate`, `cropcheck`, and the everyday and test prompt lists
 - [x] M5b: Phase A. Record one sitting, run the crop check, score both models, and pick one
-- [x] M5c: Mac pipeline. `serve`, `ModelSidecar`, `SilentDictationPipeline`, the Silent Dictation settings tab and the LLM cleanup. See "M5c scope (Mac pipeline)". Its in-app checks still need a run with the iPhone
+- [x] M5c: Mac pipeline. `serve`, `ModelSidecar`, `SilentDictationPipeline`, the Silent Dictation settings tab and the LLM cleanup. See "M5c scope (Mac pipeline)". It ran with the iPhone on Nov 16 and 21, 2026, and typed free sentences into the focused app. The 2.5 s latency check is not measured yet
 - [ ] M5d: data collection. 8 to 10 sittings and the test-set sitting
 - [ ] M5e: fine-tuning. `finetune`, one GPU run, and the held-out and test-set scores
 
